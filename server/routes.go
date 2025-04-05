@@ -17,7 +17,6 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Heartbeat("/ping"))
 	r.Use(authMiddleware(s.config.AuthToken))
 	r.Use(httprate.Limit(
 		10,
@@ -29,7 +28,8 @@ func (s *Server) Routes() http.Handler {
 		),
 	))
 
-	r.Post("/update", s.updateService)
+	r.Get("/version", s.serverVersion)
+	r.Post("/v1/update/{serviceName}", s.updateService)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -38,12 +38,17 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
+func (s *Server) serverVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.version)
+}
+
 func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
-	serviceName := r.Header.Get("X-Service-Name")
-	image := r.Header.Get("X-Image")
+	serviceName := chi.URLParam(r, "serviceName")
+	image := r.URL.Query().Get("image")
 
 	if serviceName == "" || image == "" {
-		http.Error(w, "Missing X-Service-Name or X-Image headers", http.StatusBadRequest)
+		http.Error(w, "Missing serviceName in path or image in query", http.StatusBadRequest)
 		return
 	}
 
@@ -55,13 +60,12 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-
 }
 
 func authMiddleware(expectedToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := r.Header.Get("X-API-KEY")
+			token := r.Header.Get("Authorization")
 			if token != expectedToken {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
