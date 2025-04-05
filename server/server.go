@@ -14,15 +14,17 @@ import (
 
 type Server struct {
 	version      string
+	config       *Config
 	port         string
 	server       *http.Server
 	dockerClient *client.Client
 }
 
-func NewServer(version string, port string, dockerClient *client.Client) *Server {
+func NewServer(version string, config *Config, port string, dockerClient *client.Client) *Server {
 
 	s := &Server{
 		version:      version,
+		config:       config,
 		port:         port,
 		dockerClient: dockerClient,
 	}

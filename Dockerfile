@@ -26,8 +26,8 @@ RUN apk --no-cache add ca-certificates
 
 COPY --from=build /build/swarmctl /bin/swarmctl
 
-EXPOSE 8080
+EXPOSE 9000
 
 ENTRYPOINT ["/bin/swarmctl"]
 
-CMD ["-port", "8080"]
+CMD ["-port", "9000"]
