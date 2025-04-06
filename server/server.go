@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -48,6 +49,10 @@ func (s *Server) Close() {
 	if err := s.server.Close(); err != nil {
 		slog.Error("Error while closing server", slog.Any("err", err))
 	}
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.server.Shutdown(ctx)
 }
 
 func FormatBuildVersion(version string, commit string, buildTime string) string {

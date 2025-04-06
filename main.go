@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/alexraskin/swarmctl/server"
 	"github.com/docker/docker/client"
@@ -19,7 +21,6 @@ var (
 )
 
 func main() {
-
 	port := flag.String("port", "8080", "port to listen on")
 	flag.Parse()
 
@@ -30,14 +31,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	server := server.NewServer(server.FormatBuildVersion(version, commit, buildTime), config, *port, dockerClient)
+	srv := server.NewServer(server.FormatBuildVersion(version, commit, buildTime), config, *port, dockerClient)
 
-	go server.Start()
-	defer server.Close()
+	go srv.Start()
 
 	slog.Info("started web server", slog.Any("listen_addr", *port))
+
 	si := make(chan os.Signal, 1)
 	signal.Notify(si, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+
 	<-si
 	slog.Info("shutting down web server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("graceful shutdown failed", slog.Any("err", err))
+	}
 }

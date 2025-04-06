@@ -1,0 +1,53 @@
+name: pipeline
+on:
+ push:
+   branches:
+     - "main"
+
+permissions:
+  packages: write
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: https://ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Prepare Version Info
+        run: |
+          echo "VERSION=$(git describe --tags)" >> $GITHUB_ENV
+          echo "COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "BUILD_TIME=$(date --rfc-3339=seconds)" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ env.COMMIT }}
+            BUILD_TIME=${{ env.BUILD_TIME }}
+          tags: |
+            ghcr.io/alexraskin/swarmctl:latest
+            ghcr.io/alexraskin/swarmctl:${{ github.sha }}
+  deploy:
+    needs:
+      - build-and-push-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: "https://swarmctl.alexraskin.com/v1/update/swarmctl_server?image=ghcr.io/alexraskin/swarmctl:${{ github.sha }}"
+          method: "POST"
+          timeout: 60000
+          customHeaders: '{"Authorization": "Bearer ${{ secrets.AUTH_TOKEN }}"}'
