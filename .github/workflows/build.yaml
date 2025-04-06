@@ -50,4 +50,4 @@ jobs:
           url: "https://swarmctl.alexraskin.com/v1/update/swarmctl_server?image=ghcr.io/alexraskin/swarmctl:${{ github.sha }}"
           method: "POST"
           timeout: 60000
-          customHeaders: '{"Authorization": "Bearer ${{ secrets.AUTH_TOKEN }}"}'
+          customHeaders: '{"Authorization": "${{ secrets.AUTH_TOKEN }}"}'
