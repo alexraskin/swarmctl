@@ -26,6 +26,9 @@ RUN apk --no-cache add ca-certificates
 
 COPY --from=build /build/swarmctl /bin/swarmctl
 
+HEALTHCHECK --timeout=10s --start-period=60s --interval=60s \
+  CMD wget --spider -q http://localhost:9000/ping
+
 EXPOSE 9000
 
 ENTRYPOINT ["/bin/swarmctl"]
