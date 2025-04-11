@@ -18,8 +18,8 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(authMiddleware(s.config.AuthToken))
 	r.Use(middleware.Heartbeat("/ping"))
+	r.Use(authMiddleware(s.config.AuthToken))
 	r.Use(httprate.Limit(
 		10,
 		time.Minute,
