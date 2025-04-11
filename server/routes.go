@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
 )
 
@@ -19,8 +18,8 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Heartbeat("/ping"))
 	r.Use(authMiddleware(s.config.AuthToken))
+	r.Use(middleware.Heartbeat("/ping"))
 	r.Use(httprate.Limit(
 		10,
 		time.Minute,
