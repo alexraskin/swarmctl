@@ -13,7 +13,6 @@ type Config struct {
 	CloudflareTunnelID  string
 	CloudflareAPIKey    string
 	CloudflareAPIEmail  string
-	CloudflareDomain    string
 	CloudflareAccountID string
 }
 
@@ -27,7 +26,6 @@ func NewConfigFromEnv() *Config {
 		CloudflareTunnelID:  getSecretOrEnv("CLOUDFLARE_TUNNEL_ID"),
 		CloudflareAPIKey:    getSecretOrEnv("CLOUDFLARE_API_KEY"),
 		CloudflareAPIEmail:  getSecretOrEnv("CLOUDFLARE_API_EMAIL"),
-		CloudflareDomain:    getSecretOrEnv("CLOUDFLARE_DOMAIN"),
 		CloudflareAccountID: getSecretOrEnv("CLOUDFLARE_ACCOUNT_ID"),
 	}
 }
