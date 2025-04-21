@@ -83,14 +83,26 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 	}
 
 	internalServiceURL := fmt.Sprintf("http://%s:%s", serviceName, port)
+	existingConfig, exists := existingConfigs[host]
 
-	if _, exists := existingConfigs[host]; !exists {
-		err := s.cloudflareClient.updateTunnelConfig(s.ctx, host, internalServiceURL)
-		if err != nil {
-			return fmt.Errorf("failed to create hostname %s: %w", host, err)
-		}
+	if err := s.cloudflareClient.updateTunnelConfig(s.ctx, host, internalServiceURL); err != nil {
+		return fmt.Errorf("failed to update tunnel config for %s: %w", host, err)
+	}
+
+	isNew := !exists
+	isChanged := exists && existingConfig.URL != internalServiceURL
+
+	if isNew {
 		slog.Debug("created new tunnel rule", slog.String("hostname", host), slog.String("service", internalServiceURL))
+	} else if isChanged {
+		slog.Debug("updated existing tunnel rule", slog.String("hostname", host),
+			slog.String("old_service", existingConfig.URL),
+			slog.String("new_service", internalServiceURL))
+	} else {
+		slog.Debug("tunnel rule already exists and is up-to-date", slog.String("hostname", host))
+	}
 
+	if isNew {
 		zoneID, err := s.cloudflareClient.getZoneID(s.ctx, host)
 		if err != nil {
 			return fmt.Errorf("failed to get zone ID for hostname %s: %w", host, err)
@@ -104,8 +116,6 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 		}
 
 		slog.Debug("created DNS record", slog.String("hostname", host), slog.String("zoneID", zoneID))
-	} else {
-		slog.Debug("tunnel hostname already exists", slog.String("hostname", host))
 	}
 
 	return nil

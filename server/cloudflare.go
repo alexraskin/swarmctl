@@ -26,26 +26,48 @@ func NewCloudflareClient(config *Config) (*CloudflareClient, error) {
 }
 
 func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
+	existingConfig, err := c.getTunnelConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get existing tunnel config: %w", err)
+	}
+
+	ingressList := []zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
+		{
+			Hostname: cloudflare.F(hostname),
+			Service:  cloudflare.F(serviceURL),
+		},
+	}
+
+	for _, ingress := range existingConfig.Config.Ingress {
+		if ingress.Service == "http_status:404" {
+			continue
+		}
+
+		if ingress.Hostname == hostname {
+			continue
+		}
+
+		ingressList = append(ingressList, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
+			Hostname: cloudflare.F(ingress.Hostname),
+			Service:  cloudflare.F(ingress.Service),
+		})
+	}
+
+	ingressList = append(ingressList, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
+		Service: cloudflare.F("http_status:404"),
+	})
+
 	params := zero_trust.TunnelCloudflaredConfigurationUpdateParams{
 		AccountID: cloudflare.F(c.config.CloudflareAccountID),
-
 		Config: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfig{
-			Ingress: cloudflare.F([]zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
-				{
-					Hostname: cloudflare.F(hostname),
-					Service:  cloudflare.F(serviceURL),
-				},
-				{
-					Service: cloudflare.F("http_status:404"),
-				},
-			}),
+			Ingress: cloudflare.F(ingressList),
 			OriginRequest: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigOriginRequest{
 				Access: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigOriginRequestAccess{}),
 			}),
 		}),
 	}
 
-	_, err := c.client.
+	_, err = c.client.
 		ZeroTrust.
 		Tunnels.
 		Cloudflared.
@@ -53,7 +75,6 @@ func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, ser
 		Update(ctx, c.config.CloudflareTunnelID, params)
 
 	return err
-
 }
 
 func (c *CloudflareClient) getTunnelConfig(ctx context.Context) (*zero_trust.TunnelCloudflaredConfigurationGetResponse, error) {
