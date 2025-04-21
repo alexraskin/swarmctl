@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/swarm"
@@ -83,9 +82,7 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 		return nil
 	}
 
-	parts := strings.Split(service.Spec.Name, "_")
-	internalName := parts[len(parts)-1]
-	internalServiceURL := fmt.Sprintf("http://%s:%s", internalName, port)
+	internalServiceURL := fmt.Sprintf("http://%s:%s", serviceName, port)
 
 	if _, exists := existingConfigs[host]; !exists {
 		err := s.cloudflareClient.updateTunnelConfig(s.ctx, host, internalServiceURL)
