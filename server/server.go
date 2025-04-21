@@ -14,20 +14,24 @@ import (
 )
 
 type Server struct {
-	version      string
-	config       *Config
-	port         string
-	server       *http.Server
-	dockerClient *client.Client
+	ctx              context.Context
+	version          string
+	config           *Config
+	port             string
+	server           *http.Server
+	dockerClient     *client.Client
+	cloudflareClient *CloudflareClient
 }
 
-func NewServer(version string, config *Config, port string, dockerClient *client.Client) *Server {
+func NewServer(ctx context.Context, version string, config *Config, port string, dockerClient *client.Client, cloudflareClient *CloudflareClient) *Server {
 
 	s := &Server{
-		version:      version,
-		config:       config,
-		port:         port,
-		dockerClient: dockerClient,
+		ctx:              ctx,
+		version:          version,
+		config:           config,
+		port:             port,
+		dockerClient:     dockerClient,
+		cloudflareClient: cloudflareClient,
 	}
 
 	s.server = &http.Server{

@@ -4,32 +4,48 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	AuthToken string
+	AuthToken           string
+	CloudflareTunnelID  string
+	CloudflareAPIKey    string
+	CloudflareAPIEmail  string
+	CloudflareDomain    string
+	CloudflareAccountID string
 }
 
-func NewConfig(authToken string) *Config {
+func NewConfigFromEnv() *Config {
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("No .env file found or error reading .env:", err)
+	}
 	return &Config{
-		AuthToken: authToken,
+		AuthToken:           getSecretOrEnv("AUTH_TOKEN"),
+		CloudflareTunnelID:  getSecretOrEnv("CLOUDFLARE_TUNNEL_ID"),
+		CloudflareAPIKey:    getSecretOrEnv("CLOUDFLARE_API_KEY"),
+		CloudflareAPIEmail:  getSecretOrEnv("CLOUDFLARE_API_EMAIL"),
+		CloudflareDomain:    getSecretOrEnv("CLOUDFLARE_DOMAIN"),
+		CloudflareAccountID: getSecretOrEnv("CLOUDFLARE_ACCOUNT_ID"),
 	}
 }
 
-func GetAuthToken() string {
-	envValue := os.Getenv("AUTH_TOKEN")
+func getSecretOrEnv(key string) string {
+	value := os.Getenv(key)
 
-	if strings.HasPrefix(envValue, "/") {
-		data, err := os.ReadFile(envValue)
+	if strings.HasPrefix(value, "/") {
+		data, err := os.ReadFile(value)
 		if err != nil {
-			log.Fatalf("Failed to read auth token from secret file: %v", err)
+			log.Fatalf("Failed to read secret file for %s: %v", key, err)
 		}
 		return strings.TrimSpace(string(data))
 	}
 
-	if envValue == "" {
-		log.Fatal("AUTH_TOKEN is not set")
+	if value == "" {
+		log.Fatalf("Environment variable %s is not set", key)
 	}
 
-	return envValue
+	return value
 }

@@ -22,31 +22,49 @@ var (
 
 func main() {
 	port := flag.String("port", "8080", "port to listen on")
+	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
-	config := server.NewConfig(server.GetAuthToken())
+	if *debug {
+		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})))
+	}
+
+	config := server.NewConfigFromEnv()
 
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	srv := server.NewServer(server.FormatBuildVersion(version, commit, buildTime), config, *port, dockerClient)
+	cloudflareClient, err := server.NewCloudflareClient(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := server.NewServer(ctx, server.FormatBuildVersion(version, commit, buildTime), config, *port, dockerClient, cloudflareClient)
 
 	go srv.Start()
 
-	slog.Info("started web server", slog.Any("listen_addr", *port))
+	go srv.StartCloudflare()
+
+	slog.Debug("started web server", slog.Any("listen_addr", *port), slog.Any("version", version), slog.Any("commit", commit), slog.Any("build_time", buildTime))
 
 	si := make(chan os.Signal, 1)
 	signal.Notify(si, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 
 	<-si
-	slog.Info("shutting down web server")
+	slog.Debug("shutting down web server")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("graceful shutdown failed", slog.Any("err", err))
+		srv.Close()
 	}
 }

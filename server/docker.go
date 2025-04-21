@@ -1,21 +1,21 @@
 package server
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/swarm"
 )
 
 type DockerUpdateResponse struct {
 	Success    bool   `json:"success"`
-	OldVersion uint64 `json:"old_version"`
-	NewVersion uint64 `json:"new_version"`
+	OldVersion uint64 `json:"oldVersion"`
+	NewVersion uint64 `json:"newVersion"`
 }
 
-func (s *Server) updateDockerService(ctx context.Context, serviceName string, image string) (*DockerUpdateResponse, error) {
+func (s *Server) updateDockerService(serviceName string, image string) (*DockerUpdateResponse, error) {
 
-	service, _, err := s.dockerClient.ServiceInspectWithRaw(ctx, serviceName, types.ServiceInspectOptions{})
+	service, _, err := s.dockerClient.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service: %v", err)
 	}
@@ -23,7 +23,7 @@ func (s *Server) updateDockerService(ctx context.Context, serviceName string, im
 
 	service.Spec.TaskTemplate.ContainerSpec.Image = image
 
-	_, err = s.dockerClient.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, types.ServiceUpdateOptions{})
+	_, err = s.dockerClient.ServiceUpdate(s.ctx, service.ID, service.Version, service.Spec, types.ServiceUpdateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update service: %v", err)
 	}
@@ -32,4 +32,29 @@ func (s *Server) updateDockerService(ctx context.Context, serviceName string, im
 		OldVersion: oldVersion,
 		NewVersion: service.Version.Index,
 	}, nil
+}
+
+func (s *Server) getDockerServiceMetadata(serviceName string) (string, string, error) {
+	service, _, err := s.dockerClient.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get service: %w", err)
+	}
+
+	labels := service.Spec.Labels
+	port, portOK := labels["tunnel.port"]
+	host, hostOK := labels["tunnel.hostname"]
+
+	if !portOK || !hostOK || port == "" || host == "" {
+		return "", "", fmt.Errorf("service %s missing tunnel.port or tunnel.hostname", serviceName)
+	}
+
+	return host, port, nil
+}
+
+func (s *Server) getDockerServices() ([]swarm.Service, error) {
+	services, err := s.dockerClient.ServiceList(s.ctx, types.ServiceListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %v", err)
+	}
+	return services, nil
 }

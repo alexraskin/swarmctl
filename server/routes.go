@@ -3,13 +3,18 @@ package server
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"runtime"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 )
+
+var statsStartTime = time.Now()
 
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
@@ -31,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	))
 
 	r.Get("/version", s.serverVersion)
+	r.Get("/stats", s.stats)
 	r.Post("/v1/update/{serviceName}", s.updateService)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +44,30 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	return r
+}
+
+func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
+	stats := runtime.MemStats{}
+	runtime.ReadMemStats(&stats)
+
+	data := struct {
+		Go               string
+		Uptime           string
+		MemoryUsed       string
+		TotalMemory      string
+		GarbageCollected string
+		Goroutines       int
+	}{
+		Go:               runtime.Version(),
+		Uptime:           getDurationString(time.Since(statsStartTime)),
+		MemoryUsed:       humanize.Bytes(stats.Alloc),
+		TotalMemory:      humanize.Bytes(stats.Sys),
+		GarbageCollected: humanize.Bytes(stats.TotalAlloc),
+		Goroutines:       runtime.NumGoroutine(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
 }
 
 func (s *Server) serverVersion(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +84,7 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := s.updateDockerService(r.Context(), serviceName, image)
+	response, err := s.updateDockerService(serviceName, image)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -75,4 +105,13 @@ func authMiddleware(expectedToken string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func getDurationString(duration time.Duration) string {
+	return fmt.Sprintf(
+		"%0.2d:%02d:%02d",
+		int(duration.Hours()),
+		int(duration.Minutes())%60,
+		int(duration.Seconds())%60,
+	)
 }

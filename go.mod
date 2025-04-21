@@ -3,9 +3,13 @@ module github.com/alexraskin/swarmctl
 go 1.24.2
 
 require (
+	github.com/cloudflare/cloudflare-go/v4 v4.2.0
 	github.com/docker/docker v28.0.4+incompatible
+	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/httprate v0.15.0
+	github.com/joho/godotenv v1.5.1
+	golang.org/x/net v0.35.0
 )
 
 require (
@@ -25,6 +29,10 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
