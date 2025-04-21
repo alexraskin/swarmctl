@@ -20,17 +20,17 @@ func (s *Server) StartCloudflare() {
 	slog.Debug("starting Cloudflare sync")
 
 	if err := s.cloudflareSync(); err != nil {
-		slog.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
+		s.logger.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
 	}
 
 	for {
 		select {
 		case <-ticker.C:
 			if err := s.cloudflareSync(); err != nil {
-				slog.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
+				s.logger.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
 			}
 		case <-s.ctx.Done():
-			slog.Info("Stopping Cloudflare sync ticker")
+			s.logger.Info("Stopping Cloudflare sync ticker")
 			return
 		}
 	}
@@ -49,7 +49,7 @@ func (s *Server) cloudflareSync() error {
 
 	for _, service := range services {
 		if err := s.processService(service, existingConfigs); err != nil {
-			slog.Error("failed to process service", slog.String("service", service.Spec.Name), slog.Any("err", err))
+			s.logger.Error("failed to process service", slog.String("service", service.Spec.Name), slog.Any("err", err))
 		}
 	}
 
@@ -76,46 +76,55 @@ func (s *Server) getExistingTunnelConfigs() (map[string]existingConfig, error) {
 func (s *Server) processService(service swarm.Service, existingConfigs map[string]existingConfig) error {
 	serviceName := service.Spec.Name
 
-	host, port, err := s.getDockerServiceMetadata(serviceName)
+	hosts, port, err := s.getDockerServiceMetadata(serviceName)
 	if err != nil {
 		slog.Debug("skipping service", slog.String("service", serviceName), slog.String("reason", err.Error()))
 		return nil
 	}
 
+	if len(hosts) == 0 {
+		slog.Debug("service has no hostnames configured",
+			slog.String("service", serviceName))
+		return nil
+	}
+
+	slog.Debug("processing service with hosts",
+		slog.String("service", serviceName),
+		slog.Int("host_count", len(hosts)),
+		slog.Any("hosts", hosts))
+
 	internalServiceURL := fmt.Sprintf("http://%s:%s", serviceName, port)
-	existingConfig, exists := existingConfigs[host]
+	for _, h := range hosts {
 
-	if err := s.cloudflareClient.updateTunnelConfig(s.ctx, host, internalServiceURL); err != nil {
-		return fmt.Errorf("failed to update tunnel config for %s: %w", host, err)
-	}
+		existingConfig, exists := existingConfigs[h]
 
-	isNew := !exists
-	isChanged := exists && existingConfig.URL != internalServiceURL
-
-	if isNew {
-		slog.Debug("created new tunnel rule", slog.String("hostname", host), slog.String("service", internalServiceURL))
-	} else if isChanged {
-		slog.Debug("updated existing tunnel rule", slog.String("hostname", host),
-			slog.String("old_service", existingConfig.URL),
-			slog.String("new_service", internalServiceURL))
-	} else {
-		slog.Debug("tunnel rule already exists and is up-to-date", slog.String("hostname", host))
-	}
-
-	if isNew {
-		zoneID, err := s.cloudflareClient.getZoneID(s.ctx, host)
-		if err != nil {
-			return fmt.Errorf("failed to get zone ID for hostname %s: %w", host, err)
+		if err := s.cloudflareClient.updateTunnelConfig(s.ctx, h, internalServiceURL); err != nil {
+			return fmt.Errorf("failed to update tunnel config for %s: %w", h, err)
 		}
 
-		slog.Debug("got zone ID", slog.String("zoneID", zoneID))
+		isNew := !exists
+		isChanged := exists && existingConfig.URL != internalServiceURL
 
-		err = s.cloudflareClient.createTunnelDNSRecord(s.ctx, zoneID, host)
-		if err != nil {
-			return fmt.Errorf("failed to create DNS record for hostname %s: %w", host, err)
+		if isNew {
+			s.logger.Debug("created new tunnel rule", slog.String("hostname", h), slog.String("service", internalServiceURL))
+			zoneID, err := s.cloudflareClient.getZoneID(s.ctx, h)
+			if err != nil {
+				return fmt.Errorf("failed to get zone ID for hostname %s: %w", h, err)
+			}
+
+			err = s.cloudflareClient.createTunnelDNSRecord(s.ctx, zoneID, h)
+			if err != nil {
+				return fmt.Errorf("failed to create DNS record for hostname %s: %w", h, err)
+			}
+
+			s.logger.Debug("created DNS record", slog.String("hostname", h), slog.String("zoneID", zoneID))
+		} else if isChanged {
+			s.logger.Debug("updated existing tunnel rule", slog.String("hostname", h),
+				slog.String("old_service", existingConfig.URL),
+				slog.String("new_service", internalServiceURL))
+		} else {
+			s.logger.Debug("tunnel rule already exists and is up-to-date", slog.String("hostname", h))
 		}
-
-		slog.Debug("created DNS record", slog.String("hostname", host), slog.String("zoneID", zoneID))
 	}
 
 	return nil

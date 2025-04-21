@@ -21,9 +21,10 @@ type Server struct {
 	server           *http.Server
 	dockerClient     *client.Client
 	cloudflareClient *CloudflareClient
+	logger           *slog.Logger
 }
 
-func NewServer(ctx context.Context, version string, config *Config, port string, dockerClient *client.Client, cloudflareClient *CloudflareClient) *Server {
+func NewServer(ctx context.Context, version string, config *Config, port string, dockerClient *client.Client, cloudflareClient *CloudflareClient, logger *slog.Logger) *Server {
 
 	s := &Server{
 		ctx:              ctx,
@@ -32,6 +33,7 @@ func NewServer(ctx context.Context, version string, config *Config, port string,
 		port:             port,
 		dockerClient:     dockerClient,
 		cloudflareClient: cloudflareClient,
+		logger:           logger,
 	}
 
 	s.server = &http.Server{
@@ -44,14 +46,14 @@ func NewServer(ctx context.Context, version string, config *Config, port string,
 
 func (s *Server) Start() {
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("Error while listening", slog.Any("err", err))
+		s.logger.Error("Error while listening", slog.Any("err", err))
 		os.Exit(-1)
 	}
 }
 
 func (s *Server) Close() {
 	if err := s.server.Close(); err != nil {
-		slog.Error("Error while closing server", slog.Any("err", err))
+		s.logger.Error("Error while closing server", slog.Any("err", err))
 	}
 }
 

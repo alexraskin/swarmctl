@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudflare/cloudflare-go/v4"
 	"github.com/cloudflare/cloudflare-go/v4/dns"
@@ -26,6 +27,7 @@ func NewCloudflareClient(config *Config) (*CloudflareClient, error) {
 }
 
 func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
+
 	existingConfig, err := c.getTunnelConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get existing tunnel config: %w", err)
@@ -44,6 +46,10 @@ func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, ser
 		}
 
 		if ingress.Hostname == hostname {
+			continue
+		}
+
+		if strings.Contains(ingress.Hostname, ",") {
 			continue
 		}
 

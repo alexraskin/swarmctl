@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
@@ -34,21 +35,30 @@ func (s *Server) updateDockerService(serviceName string, image string) (*DockerU
 	}, nil
 }
 
-func (s *Server) getDockerServiceMetadata(serviceName string) (string, string, error) {
+func (s *Server) getDockerServiceMetadata(serviceName string) ([]string, string, error) {
 	service, _, err := s.dockerClient.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get service: %w", err)
+		return nil, "", fmt.Errorf("failed to get service: %w", err)
 	}
 
 	labels := service.Spec.Labels
 	port, portOK := labels["tunnel.port"]
 	host, hostOK := labels["tunnel.hostname"]
 
-	if !portOK || !hostOK || port == "" || host == "" {
-		return "", "", fmt.Errorf("service %s missing tunnel.port or tunnel.hostname", serviceName)
+	if !portOK && !hostOK {
+		return nil, "", fmt.Errorf("service %s has no tunnel configuration", serviceName)
 	}
 
-	return host, port, nil
+	if !portOK || port == "" {
+		return nil, "", fmt.Errorf("service %s missing tunnel.port", serviceName)
+	}
+
+	if !hostOK || host == "" {
+		return []string{}, port, nil
+	}
+
+	hosts := strings.Split(host, ",")
+	return hosts, port, nil
 }
 
 func (s *Server) getDockerServices() ([]swarm.Service, error) {
