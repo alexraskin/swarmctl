@@ -2,21 +2,10 @@
 
 ![swarmctl](https://i.gyazo.com/41976189f3f92b5ccdacc914b4b73e37.png)
 
-A simple tool to update services in a docker swarm cluster.
-
-## Usage
-
-1. Create a token for the swarmctl server.
-
-```
-echo -n "your-token" | docker secret create swarmctl-token -
-```
-
-2. Deploy the swarmctl server to the swarm cluster.
-
-```
-docker stack deploy --compose-file docker-compose.swarmctl.yml swarmctl
-```
+Docker Swarm tool:
+- RESTful API for service updates
+- Automatic service discovery via Docker Tags
+- Cloudflare Tunnel integration with DNS management
 
 For an example of how to deploy the swarmctl server to the swarm cluster, see the [docker-compose.swarmctl.yml](https://github.com/alexraskin/infrastructure/blob/main/swarmctl/docker-compose.swarmctl.yml) file.
 
