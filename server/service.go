@@ -78,17 +78,17 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 
 	hosts, port, err := s.getDockerServiceMetadata(serviceName)
 	if err != nil {
-		slog.Debug("skipping service", slog.String("service", serviceName), slog.String("reason", err.Error()))
+		s.logger.Debug("skipping service", slog.String("service", serviceName), slog.String("reason", err.Error()))
 		return nil
 	}
 
 	if len(hosts) == 0 {
-		slog.Debug("service has no hostnames configured",
+		s.logger.Debug("service has no hostnames configured",
 			slog.String("service", serviceName))
 		return nil
 	}
 
-	slog.Debug("processing service with hosts",
+	s.logger.Debug("processing service with hosts",
 		slog.String("service", serviceName),
 		slog.Int("host_count", len(hosts)),
 		slog.Any("hosts", hosts))
