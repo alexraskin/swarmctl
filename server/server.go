@@ -3,28 +3,36 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"runtime"
-	"time"
 
+	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/docker/docker/client"
 )
 
 type Server struct {
 	ctx              context.Context
-	version          string
+	version          ver.Version
 	config           *Config
 	port             string
 	server           *http.Server
 	dockerClient     *client.Client
 	cloudflareClient *CloudflareClient
+	pushoverClient   *PushoverClient
 	logger           *slog.Logger
 }
 
-func NewServer(ctx context.Context, version string, config *Config, port string, dockerClient *client.Client, cloudflareClient *CloudflareClient, logger *slog.Logger) *Server {
+func NewServer(
+	ctx context.Context,
+	version ver.Version,
+	config *Config,
+	port string,
+	dockerClient *client.Client,
+	cloudflareClient *CloudflareClient,
+	pushoverClient *PushoverClient,
+	logger *slog.Logger,
+) *Server {
 
 	s := &Server{
 		ctx:              ctx,
@@ -33,6 +41,7 @@ func NewServer(ctx context.Context, version string, config *Config, port string,
 		port:             port,
 		dockerClient:     dockerClient,
 		cloudflareClient: cloudflareClient,
+		pushoverClient:   pushoverClient,
 		logger:           logger,
 	}
 
@@ -49,6 +58,8 @@ func (s *Server) Start() {
 		s.logger.Error("Error while listening", slog.Any("err", err))
 		os.Exit(-1)
 	}
+	go s.startDockerMonitor()
+	go s.startCloudflare()
 }
 
 func (s *Server) Close() {
@@ -59,19 +70,4 @@ func (s *Server) Close() {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
-}
-
-func FormatBuildVersion(version string, commit string, buildTime string) string {
-	if len(commit) > 7 {
-		commit = commit[:7]
-	}
-
-	buildTimeStr := "unknown"
-	if buildTime != "unknown" {
-		parsedTime, _ := time.Parse(time.RFC3339, buildTime)
-		if !parsedTime.IsZero() {
-			buildTimeStr = parsedTime.Format(time.ANSIC)
-		}
-	}
-	return fmt.Sprintf("Go Version: %s\nVersion: %s\nCommit: %s\nBuild Time: %s\nOS/Arch: %s/%s\n", runtime.Version(), version, commit, buildTimeStr, runtime.GOOS, runtime.GOARCH)
 }

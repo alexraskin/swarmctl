@@ -3,8 +3,11 @@ package server
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 )
 
@@ -67,4 +70,12 @@ func (s *Server) getDockerServices() ([]swarm.Service, error) {
 		return nil, fmt.Errorf("failed to get services: %v", err)
 	}
 	return services, nil
+}
+
+func (s *Server) getDockerEvents(eventFilter filters.Args) (<-chan events.Message, <-chan error) {
+	return s.dockerClient.Events(s.ctx, events.ListOptions{
+		Since:   time.Now().Add(-1 * time.Minute).Format(time.RFC3339),
+		Until:   time.Now().Format(time.RFC3339),
+		Filters: eventFilter,
+	})
 }

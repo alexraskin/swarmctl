@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 )
 
@@ -13,7 +14,7 @@ type existingConfig struct {
 	URL string
 }
 
-func (s *Server) StartCloudflare() {
+func (s *Server) startCloudflare() error {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -31,7 +32,7 @@ func (s *Server) StartCloudflare() {
 			}
 		case <-s.ctx.Done():
 			s.logger.Info("Stopping Cloudflare sync ticker")
-			return
+			return nil
 		}
 	}
 }
@@ -127,5 +128,52 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 		}
 	}
 
+	return nil
+}
+
+func (s *Server) dockerEventsMonitor() error {
+	eventFilter := filters.NewArgs()
+	eventFilter.Add("type", "container")
+	eventFilter.Add("event", "die")
+	eventFilter.Add("event", "restart")
+
+	msgs, errs := s.getDockerEvents(eventFilter)
+
+	for {
+		select {
+		case err := <-errs:
+			s.logger.Error("Error reading Docker event", "error", err)
+			time.Sleep(5 * time.Second)
+		case msg := <-msgs:
+			containerID := msg.Actor.ID[:12]
+			status := msg.Action
+			name := msg.Actor.Attributes["name"]
+
+			message := fmt.Sprintf("Containor has died or restarted: %s (%s)", name, containerID)
+			pushoverMsg := PushoverMessage{
+				Message: message,
+				Title:   "⚠️ Docker Swarm Event",
+			}
+
+			err := s.pushoverClient.SendNotification(pushoverMsg)
+			if err != nil {
+				s.logger.Error("Error sending Pushover notification", "error", err)
+			}
+
+			s.logger.Debug("Container event", "name", name, "containerID", containerID, "status", status, "timestamp", time.Unix(msg.Time, 0).Format(time.RFC3339))
+		case <-s.ctx.Done():
+			s.logger.Debug("Stopping Docker events monitor")
+			return nil
+		}
+	}
+}
+
+func (s *Server) startDockerMonitor() error {
+	go func() {
+		if err := s.dockerEventsMonitor(); err != nil {
+			s.logger.Error("Docker events monitoring failed", slog.Any("error", err))
+		}
+	}()
+	s.logger.Debug("Docker events monitoring started")
 	return nil
 }

@@ -14,6 +14,8 @@ type Config struct {
 	CloudflareAPIKey    string
 	CloudflareAPIEmail  string
 	CloudflareAccountID string
+	PushoverAPIKey      string
+	PushoverRecipient   string
 }
 
 func NewConfigFromEnv() *Config {
@@ -27,6 +29,8 @@ func NewConfigFromEnv() *Config {
 		CloudflareAPIKey:    getSecretOrEnv("CLOUDFLARE_API_KEY"),
 		CloudflareAPIEmail:  getSecretOrEnv("CLOUDFLARE_API_EMAIL"),
 		CloudflareAccountID: getSecretOrEnv("CLOUDFLARE_ACCOUNT_ID"),
+		PushoverAPIKey:      getSecretOrEnv("PUSHOVER_API_KEY"),
+		PushoverRecipient:   getSecretOrEnv("PUSHOVER_RECIPIENT"),
 	}
 }
 

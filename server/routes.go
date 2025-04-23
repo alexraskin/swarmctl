@@ -24,7 +24,7 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/ping"))
-	r.Use(authMiddleware(s.config.AuthToken))
+	r.Use(s.authMiddleware(s.config.AuthToken))
 	r.Use(httprate.Limit(
 		10,
 		time.Minute,
@@ -59,7 +59,7 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		Goroutines       int
 	}{
 		Go:               runtime.Version(),
-		Uptime:           getDurationString(time.Since(statsStartTime)),
+		Uptime:           s.getDurationString(time.Since(statsStartTime)),
 		MemoryUsed:       humanize.Bytes(stats.Alloc),
 		TotalMemory:      humanize.Bytes(stats.Sys),
 		GarbageCollected: humanize.Bytes(stats.TotalAlloc),
@@ -71,8 +71,8 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serverVersion(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.version)
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, s.version.Format())
 }
 
 func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +94,7 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func authMiddleware(expectedToken string) func(http.Handler) http.Handler {
+func (s *Server) authMiddleware(expectedToken string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := r.Header.Get("Authorization")
@@ -107,7 +107,7 @@ func authMiddleware(expectedToken string) func(http.Handler) http.Handler {
 	}
 }
 
-func getDurationString(duration time.Duration) string {
+func (s *Server) getDurationString(duration time.Duration) string {
 	return fmt.Sprintf(
 		"%0.2d:%02d:%02d",
 		int(duration.Hours()),

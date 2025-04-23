@@ -10,20 +10,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/alexraskin/swarmctl/server"
-	"github.com/docker/docker/client"
-)
 
-var (
-	version   = "unknown"
-	commit    = "unknown"
-	buildTime = "unknown"
+	"github.com/docker/docker/client"
 )
 
 func main() {
 	port := flag.String("port", "8080", "port to listen on")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
+
+	version := ver.Load()
 
 	logger := slog.Default()
 	if *debug {
@@ -44,16 +42,24 @@ func main() {
 		log.Fatal(err)
 	}
 
+	pushoverClient := server.NewPushoverClient(config)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv := server.NewServer(ctx, server.FormatBuildVersion(version, commit, buildTime), config, *port, dockerClient, cloudflareClient, logger)
+	s := server.NewServer(
+		ctx,
+		version,
+		config,
+		*port,
+		dockerClient,
+		cloudflareClient,
+		pushoverClient,
+		logger,
+	)
+	go s.Start()
 
-	go srv.Start()
-
-	go srv.StartCloudflare()
-
-	logger.Debug("started web server", slog.Any("listen_addr", *port), slog.Any("version", version), slog.Any("commit", commit), slog.Any("build_time", buildTime))
+	logger.Debug("Starting SwarmCTL", slog.String("version", version.Version), slog.String("commit", version.Revision), slog.String("build-time", version.BuildTime))
 
 	si := make(chan os.Signal, 1)
 	signal.Notify(si, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -64,8 +70,8 @@ func main() {
 	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := s.Shutdown(ctx); err != nil {
 		logger.Error("graceful shutdown failed", slog.Any("err", err))
-		srv.Close()
+		s.Close()
 	}
 }
