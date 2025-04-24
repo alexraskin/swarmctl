@@ -1,4 +1,4 @@
-package server
+package pushover
 
 import (
 	"time"
@@ -8,35 +8,33 @@ import (
 
 type PushoverClient struct {
 	app *pushover.Pushover
-	cfg *Config
 }
 
-func NewPushoverClient(cfg *Config) *PushoverClient {
+func NewPushoverClient(apiKey string) *PushoverClient {
 	return &PushoverClient{
-		app: pushover.New(cfg.PushoverAPIKey),
-		cfg: cfg,
+		app: pushover.New(apiKey),
 	}
 }
 
 type PushoverMessage struct {
 	Title     string
 	Message   string
-	Priority  int
 	Timestamp int64
+	Recipient string
 }
 
 func (c *PushoverClient) SendNotification(msg PushoverMessage) error {
 	pushoverMsg := &pushover.Message{
 		Message:   msg.Message,
 		Title:     msg.Title,
-		Priority:  msg.Priority,
+		Priority:  pushover.PriorityNormal,
 		Timestamp: msg.Timestamp,
 		Retry:     60 * time.Second,
 		Expire:    time.Hour,
 		Sound:     pushover.SoundCosmic,
 	}
 
-	recipient := pushover.NewRecipient(c.cfg.PushoverRecipient)
+	recipient := pushover.NewRecipient(msg.Recipient)
 	_, err := c.app.SendMessage(pushoverMsg, recipient)
 	return err
 }

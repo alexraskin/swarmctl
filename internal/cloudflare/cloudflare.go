@@ -1,4 +1,4 @@
-package server
+package cloudflare
 
 import (
 	"context"
@@ -14,21 +14,24 @@ import (
 )
 
 type CloudflareClient struct {
-	client *cloudflare.Client
-	config *Config
+	client              *cloudflare.Client
+	apiKey              string
+	apiEmail            string
+	cloudflareTunnelID  string
+	cloudflareAccountID string
 }
 
-func NewCloudflareClient(config *Config) (*CloudflareClient, error) {
+func NewCloudflareClient(apiKey string, apiEmail string, cloudflareTunnelID string, cloudflareAccountID string) (*CloudflareClient, error) {
 	client := cloudflare.NewClient(
-		option.WithAPIKey(config.CloudflareAPIKey),
-		option.WithAPIEmail(config.CloudflareAPIEmail),
+		option.WithAPIKey(apiKey),
+		option.WithAPIEmail(apiEmail),
 	)
-	return &CloudflareClient{client: client, config: config}, nil
+	return &CloudflareClient{client: client, apiKey: apiKey, apiEmail: apiEmail, cloudflareTunnelID: cloudflareTunnelID, cloudflareAccountID: cloudflareAccountID}, nil
 }
 
-func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
+func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
 
-	existingConfig, err := c.getTunnelConfig(ctx)
+	existingConfig, err := c.GetTunnelConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get existing tunnel config: %w", err)
 	}
@@ -64,7 +67,7 @@ func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, ser
 	})
 
 	params := zero_trust.TunnelCloudflaredConfigurationUpdateParams{
-		AccountID: cloudflare.F(c.config.CloudflareAccountID),
+		AccountID: cloudflare.F(c.cloudflareAccountID),
 		Config: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfig{
 			Ingress: cloudflare.F(ingressList),
 			OriginRequest: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigOriginRequest{
@@ -78,14 +81,14 @@ func (c *CloudflareClient) updateTunnelConfig(ctx context.Context, hostname, ser
 		Tunnels.
 		Cloudflared.
 		Configurations.
-		Update(ctx, c.config.CloudflareTunnelID, params)
+		Update(ctx, c.cloudflareTunnelID, params)
 
 	return err
 }
 
-func (c *CloudflareClient) getTunnelConfig(ctx context.Context) (*zero_trust.TunnelCloudflaredConfigurationGetResponse, error) {
-	config, err := c.client.ZeroTrust.Tunnels.Cloudflared.Configurations.Get(ctx, c.config.CloudflareTunnelID, zero_trust.TunnelCloudflaredConfigurationGetParams{
-		AccountID: cloudflare.F(c.config.CloudflareAccountID),
+func (c *CloudflareClient) GetTunnelConfig(ctx context.Context) (*zero_trust.TunnelCloudflaredConfigurationGetResponse, error) {
+	config, err := c.client.ZeroTrust.Tunnels.Cloudflared.Configurations.Get(ctx, c.cloudflareTunnelID, zero_trust.TunnelCloudflaredConfigurationGetParams{
+		AccountID: cloudflare.F(c.cloudflareAccountID),
 	})
 	if err != nil {
 		return nil, err
@@ -93,10 +96,10 @@ func (c *CloudflareClient) getTunnelConfig(ctx context.Context) (*zero_trust.Tun
 	return config, nil
 }
 
-func (c *CloudflareClient) createTunnelDNSRecord(ctx context.Context, zoneID string, hostname string) error {
+func (c *CloudflareClient) CreateTunnelDNSRecord(ctx context.Context, zoneID string, hostname string) error {
 	recordParam := dns.CNAMERecordParam{
 		Name:    cloudflare.F(hostname),
-		Content: cloudflare.F(c.config.CloudflareTunnelID + ".cfargotunnel.com"),
+		Content: cloudflare.F(c.cloudflareTunnelID + ".cfargotunnel.com"),
 		TTL:     cloudflare.F(dns.TTL(1)),
 		Proxied: cloudflare.F(true),
 		Type:    cloudflare.F(dns.CNAMERecordTypeCNAME),
@@ -111,14 +114,14 @@ func (c *CloudflareClient) createTunnelDNSRecord(ctx context.Context, zoneID str
 	return err
 }
 
-func (c *CloudflareClient) getZoneID(ctx context.Context, hostname string) (string, error) {
+func (c *CloudflareClient) GetZoneID(ctx context.Context, hostname string) (string, error) {
 	domain, err := publicsuffix.EffectiveTLDPlusOne(hostname)
 	if err != nil {
 		return "", fmt.Errorf("cannot determine root domain for %q: %w", hostname, err)
 	}
 
 	resp, err := c.client.Zones.List(ctx, zones.ZoneListParams{
-		Account: cloudflare.F(zones.ZoneListParamsAccount{ID: cloudflare.F(c.config.CloudflareAccountID)}),
+		Account: cloudflare.F(zones.ZoneListParamsAccount{ID: cloudflare.F(c.cloudflareAccountID)}),
 		Name:    cloudflare.F(domain),
 	})
 	if err != nil {

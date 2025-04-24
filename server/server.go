@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexraskin/swarmctl/internal/cloudflare"
+	"github.com/alexraskin/swarmctl/internal/docker"
+	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/alexraskin/swarmctl/internal/ver"
-	"github.com/docker/docker/client"
 )
 
 type Server struct {
@@ -19,9 +21,9 @@ type Server struct {
 	config           *Config
 	port             string
 	server           *http.Server
-	dockerClient     *client.Client
-	cloudflareClient *CloudflareClient
-	pushoverClient   *PushoverClient
+	dockerClient     *docker.DockerClient
+	cloudflareClient *cloudflare.CloudflareClient
+	pushoverClient   *pushover.PushoverClient
 	logger           *slog.Logger
 	recentEvents     sync.Map
 }
@@ -31,9 +33,9 @@ func NewServer(
 	version ver.Version,
 	config *Config,
 	port string,
-	dockerClient *client.Client,
-	cloudflareClient *CloudflareClient,
-	pushoverClient *PushoverClient,
+	dockerClient *docker.DockerClient,
+	cloudflareClient *cloudflare.CloudflareClient,
+	pushoverClient *pushover.PushoverClient,
 	logger *slog.Logger,
 ) *Server {
 

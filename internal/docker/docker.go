@@ -1,6 +1,7 @@
-package server
+package docker
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -8,7 +9,22 @@ import (
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/client"
 )
+
+type DockerClient struct {
+	dockerClient *client.Client
+}
+
+func NewDockerClient() (*DockerClient, error) {
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docker client: %v", err)
+	}
+	return &DockerClient{
+		dockerClient: dockerClient,
+	}, nil
+}
 
 type DockerUpdateResponse struct {
 	Success    bool   `json:"success"`
@@ -16,9 +32,9 @@ type DockerUpdateResponse struct {
 	NewVersion uint64 `json:"newVersion"`
 }
 
-func (s *Server) updateDockerService(serviceName string, image string) (*DockerUpdateResponse, error) {
+func (s *DockerClient) UpdateDockerService(serviceName string, image string, ctx context.Context) (*DockerUpdateResponse, error) {
 
-	service, _, err := s.dockerClient.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
+	service, _, err := s.dockerClient.ServiceInspectWithRaw(ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service: %v", err)
 	}
@@ -26,7 +42,7 @@ func (s *Server) updateDockerService(serviceName string, image string) (*DockerU
 
 	service.Spec.TaskTemplate.ContainerSpec.Image = image
 
-	_, err = s.dockerClient.ServiceUpdate(s.ctx, service.ID, service.Version, service.Spec, types.ServiceUpdateOptions{})
+	_, err = s.dockerClient.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, types.ServiceUpdateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update service: %v", err)
 	}
@@ -37,8 +53,8 @@ func (s *Server) updateDockerService(serviceName string, image string) (*DockerU
 	}, nil
 }
 
-func (s *Server) getDockerServiceMetadata(serviceName string) ([]string, string, error) {
-	service, _, err := s.dockerClient.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
+func (s *DockerClient) GetDockerServiceMetadata(serviceName string, ctx context.Context) ([]string, string, error) {
+	service, _, err := s.dockerClient.ServiceInspectWithRaw(ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get service: %w", err)
 	}
@@ -63,16 +79,16 @@ func (s *Server) getDockerServiceMetadata(serviceName string) ([]string, string,
 	return hosts, port, nil
 }
 
-func (s *Server) getDockerServices() ([]swarm.Service, error) {
-	services, err := s.dockerClient.ServiceList(s.ctx, types.ServiceListOptions{})
+func (s *DockerClient) GetDockerServices(ctx context.Context) ([]swarm.Service, error) {
+	services, err := s.dockerClient.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %v", err)
 	}
 	return services, nil
 }
 
-func (s *Server) getDockerEvents(eventFilter filters.Args) (<-chan events.Message, <-chan error) {
-	return s.dockerClient.Events(s.ctx, events.ListOptions{
+func (s *DockerClient) GetDockerEvents(ctx context.Context, eventFilter filters.Args) (<-chan events.Message, <-chan error) {
+	return s.dockerClient.Events(ctx, events.ListOptions{
 		Filters: eventFilter,
 	})
 }

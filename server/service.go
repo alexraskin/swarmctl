@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
-	"github.com/gregdel/pushover"
 )
 
 const (
@@ -52,7 +52,7 @@ func (s *Server) cloudflareSync() error {
 		return err
 	}
 
-	services, err := s.getDockerServices()
+	services, err := s.dockerClient.GetDockerServices(s.ctx)
 	if err != nil {
 		return fmt.Errorf("get docker services: %w", err)
 	}
@@ -67,7 +67,7 @@ func (s *Server) cloudflareSync() error {
 }
 
 func (s *Server) getExistingTunnelConfigs() (map[string]existingConfig, error) {
-	existingCfgs, err := s.cloudflareClient.getTunnelConfig(s.ctx)
+	existingCfgs, err := s.cloudflareClient.GetTunnelConfig(s.ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list existing tunnel configs: %w", err)
 	}
@@ -86,7 +86,7 @@ func (s *Server) getExistingTunnelConfigs() (map[string]existingConfig, error) {
 func (s *Server) processService(service swarm.Service, existingConfigs map[string]existingConfig) error {
 	serviceName := service.Spec.Name
 
-	hosts, port, err := s.getDockerServiceMetadata(serviceName)
+	hosts, port, err := s.dockerClient.GetDockerServiceMetadata(serviceName, s.ctx)
 	if err != nil {
 		s.logger.Debug("skipping service", slog.String("service", serviceName), slog.String("reason", err.Error()))
 		return nil
@@ -108,7 +108,7 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 
 		existingConfig, exists := existingConfigs[h]
 
-		if err := s.cloudflareClient.updateTunnelConfig(s.ctx, h, internalServiceURL); err != nil {
+		if err := s.cloudflareClient.UpdateTunnelConfig(s.ctx, h, internalServiceURL); err != nil {
 			return fmt.Errorf("failed to update tunnel config for %s: %w", h, err)
 		}
 
@@ -117,12 +117,12 @@ func (s *Server) processService(service swarm.Service, existingConfigs map[strin
 
 		if isNew {
 			s.logger.Debug("created new tunnel rule", slog.String("hostname", h), slog.String("service", internalServiceURL))
-			zoneID, err := s.cloudflareClient.getZoneID(s.ctx, h)
+			zoneID, err := s.cloudflareClient.GetZoneID(s.ctx, h)
 			if err != nil {
 				return fmt.Errorf("failed to get zone ID for hostname %s: %w", h, err)
 			}
 
-			err = s.cloudflareClient.createTunnelDNSRecord(s.ctx, zoneID, h)
+			err = s.cloudflareClient.CreateTunnelDNSRecord(s.ctx, zoneID, h)
 			if err != nil {
 				return fmt.Errorf("failed to create DNS record for hostname %s: %w", h, err)
 			}
@@ -147,7 +147,7 @@ func (s *Server) dockerEventsMonitor() error {
 	eventFilter.Add("event", "restart")
 
 	for {
-		msgs, errs := s.getDockerEvents(eventFilter)
+		msgs, errs := s.dockerClient.GetDockerEvents(s.ctx, eventFilter)
 
 		for {
 			select {
@@ -178,11 +178,11 @@ func (s *Server) dockerEventsMonitor() error {
 
 				s.recentEvents.Store(eventKey, now)
 
-				pushoverMsg := PushoverMessage{
+				pushoverMsg := pushover.PushoverMessage{
 					Title:     "DOCKER SWARM EVENT",
 					Message:   fmt.Sprintf("Container has died or restarted: %s (%s) with exit code %s", name, containerID, exitCode),
-					Priority:  pushover.PriorityNormal,
 					Timestamp: time.Unix(msg.Time, 0).Unix(),
+					Recipient: s.config.PushoverRecipient,
 				}
 
 				err := s.pushoverClient.SendNotification(pushoverMsg)

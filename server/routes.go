@@ -84,7 +84,7 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := s.updateDockerService(serviceName, image)
+	response, err := s.dockerClient.UpdateDockerService(serviceName, image, r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

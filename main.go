@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexraskin/swarmctl/internal/cloudflare"
+	"github.com/alexraskin/swarmctl/internal/docker"
+	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/alexraskin/swarmctl/server"
-
-	"github.com/docker/docker/client"
 )
 
 func main() {
@@ -32,17 +33,17 @@ func main() {
 
 	config := server.NewConfigFromEnv()
 
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := docker.NewDockerClient()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	cloudflareClient, err := server.NewCloudflareClient(config)
+	cloudflareClient, err := cloudflare.NewCloudflareClient(config.CloudflareAPIKey, config.CloudflareAPIEmail, config.CloudflareTunnelID, config.CloudflareAccountID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pushoverClient := server.NewPushoverClient(config)
+	pushoverClient := pushover.NewPushoverClient(config.PushoverAPIKey)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
