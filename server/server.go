@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/docker/docker/client"
@@ -21,6 +23,7 @@ type Server struct {
 	cloudflareClient *CloudflareClient
 	pushoverClient   *PushoverClient
 	logger           *slog.Logger
+	recentEvents     sync.Map
 }
 
 func NewServer(
@@ -43,6 +46,7 @@ func NewServer(
 		cloudflareClient: cloudflareClient,
 		pushoverClient:   pushoverClient,
 		logger:           logger,
+		recentEvents:     sync.Map{},
 	}
 
 	s.server = &http.Server{
@@ -54,12 +58,15 @@ func NewServer(
 }
 
 func (s *Server) Start() {
+
+	go s.startDockerMonitor()
+	go s.startCloudflare()
+	go s.startEventCleanup(5*time.Minute, 10*time.Minute)
+
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		s.logger.Error("Error while listening", slog.Any("err", err))
 		os.Exit(-1)
 	}
-	go s.startDockerMonitor()
-	go s.startCloudflare()
 }
 
 func (s *Server) Close() {

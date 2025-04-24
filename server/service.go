@@ -1,12 +1,21 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/gregdel/pushover"
+)
+
+const (
+	cooldown = 1 * time.Minute
+	maxAge   = 1 * time.Hour
 )
 
 type existingConfig struct {
@@ -137,43 +146,95 @@ func (s *Server) dockerEventsMonitor() error {
 	eventFilter.Add("event", "die")
 	eventFilter.Add("event", "restart")
 
-	msgs, errs := s.getDockerEvents(eventFilter)
-
 	for {
-		select {
-		case err := <-errs:
-			s.logger.Error("Error reading Docker event", "error", err)
-			time.Sleep(5 * time.Second)
-		case msg := <-msgs:
-			containerID := msg.Actor.ID[:12]
-			status := msg.Action
-			name := msg.Actor.Attributes["name"]
+		msgs, errs := s.getDockerEvents(eventFilter)
 
-			message := fmt.Sprintf("Containor has died or restarted: %s (%s)", name, containerID)
-			pushoverMsg := PushoverMessage{
-				Message: message,
-				Title:   "⚠️ Docker Swarm Event",
+		for {
+			select {
+			case err, ok := <-errs:
+				if !ok {
+					s.logger.Warn("Docker event error channel closed, reconnecting...")
+					return s.dockerEventsMonitor()
+				}
+				if err != nil {
+					s.logger.Error("Error reading Docker event", "error", err)
+				}
+				time.Sleep(5 * time.Second)
+			case msg := <-msgs:
+				containerID := msg.Actor.ID[:12]
+				status := msg.Action
+				name := msg.Actor.Attributes["name"]
+				exitCode := msg.Actor.Attributes["exitCode"]
+
+				eventKey := fmt.Sprintf("%s:%s", containerID, status)
+				now := time.Now()
+
+				if lastSeenRaw, exists := s.recentEvents.Load(eventKey); exists {
+					lastSeen := lastSeenRaw.(time.Time)
+					if now.Sub(lastSeen) < cooldown {
+						continue
+					}
+				}
+
+				s.recentEvents.Store(eventKey, now)
+
+				pushoverMsg := PushoverMessage{
+					Title:     "DOCKER SWARM EVENT",
+					Message:   fmt.Sprintf("Container has died or restarted: %s (%s) with exit code %s", name, containerID, exitCode),
+					Priority:  pushover.PriorityNormal,
+					Timestamp: time.Unix(msg.Time, 0).Unix(),
+				}
+
+				err := s.pushoverClient.SendNotification(pushoverMsg)
+				if err != nil {
+					s.logger.Error("Error sending Pushover notification", "error", err)
+				}
+
+				s.logger.Debug("Container event", "name", name, "containerID", containerID, "status", status, "exitCode", exitCode, "timestamp", time.Unix(msg.Time, 0).Format(time.RFC3339))
+			case <-s.ctx.Done():
+				s.logger.Debug("Stopping Docker events monitor")
+				return nil
 			}
-
-			err := s.pushoverClient.SendNotification(pushoverMsg)
-			if err != nil {
-				s.logger.Error("Error sending Pushover notification", "error", err)
-			}
-
-			s.logger.Debug("Container event", "name", name, "containerID", containerID, "status", status, "timestamp", time.Unix(msg.Time, 0).Format(time.RFC3339))
-		case <-s.ctx.Done():
-			s.logger.Debug("Stopping Docker events monitor")
-			return nil
 		}
 	}
 }
 
 func (s *Server) startDockerMonitor() error {
 	go func() {
-		if err := s.dockerEventsMonitor(); err != nil {
-			s.logger.Error("Docker events monitoring failed", slog.Any("error", err))
+		if err := s.dockerEventsMonitor(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+			s.logger.Error("Error reading Docker event", "error", err)
 		}
 	}()
 	s.logger.Debug("Docker events monitoring started")
 	return nil
+}
+
+func (s *Server) startEventCleanup(interval time.Duration, maxAge time.Duration) {
+	ticker := time.NewTicker(interval)
+
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now()
+				s.recentEvents.Range(func(key, value any) bool {
+					lastSeen, ok := value.(time.Time)
+					if !ok {
+						s.recentEvents.Delete(key)
+						return true
+					}
+					if now.Sub(lastSeen) > maxAge {
+						s.logger.Debug("Cleaning up old container event", "key", key)
+						s.recentEvents.Delete(key)
+					}
+					return true
+				})
+
+			case <-s.ctx.Done():
+				s.logger.Debug("Stopping event cleanup")
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 }

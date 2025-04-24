@@ -57,9 +57,10 @@ func main() {
 		pushoverClient,
 		logger,
 	)
+
 	go s.Start()
 
-	logger.Debug("Starting SwarmCTL", slog.String("version", version.Version), slog.String("commit", version.Revision), slog.String("build-time", version.BuildTime))
+	logger.Debug("Starting swarmctl...", slog.String("port", *port), slog.String("version", version.Version), slog.String("revision", version.Revision), slog.String("build-time", version.BuildTime))
 
 	si := make(chan os.Signal, 1)
 	signal.Notify(si, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)

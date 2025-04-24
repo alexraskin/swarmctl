@@ -19,16 +19,18 @@ func NewPushoverClient(cfg *Config) *PushoverClient {
 }
 
 type PushoverMessage struct {
-	Message string
-	Title   string
+	Title     string
+	Message   string
+	Priority  int
+	Timestamp int64
 }
 
 func (c *PushoverClient) SendNotification(msg PushoverMessage) error {
 	pushoverMsg := &pushover.Message{
 		Message:   msg.Message,
 		Title:     msg.Title,
-		Priority:  pushover.PriorityEmergency,
-		Timestamp: time.Now().Unix(),
+		Priority:  msg.Priority,
+		Timestamp: msg.Timestamp,
 		Retry:     60 * time.Second,
 		Expire:    time.Hour,
 		Sound:     pushover.SoundCosmic,
