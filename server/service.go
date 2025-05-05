@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/alexraskin/swarmctl/internal/pushover"
@@ -86,30 +87,26 @@ func (s *Server) getExistingTunnelConfigs() (map[string]existingConfig, error) {
 func (s *Server) processService(service swarm.Service, existingConfigs map[string]existingConfig) error {
 	serviceName := service.Spec.Name
 
-	hosts, port, err := s.dockerClient.GetDockerServiceMetadata(serviceName, s.ctx)
+	serviceMetaData, err := s.dockerClient.GetDockerService(serviceName, s.ctx)
 	if err != nil {
-		s.logger.Debug("skipping service", slog.String("service", serviceName), slog.String("reason", err.Error()))
-		return nil
+		return err
 	}
 
-	if len(hosts) == 0 {
-		s.logger.Debug("service has no hostnames configured",
+	if serviceMetaData.Spec.Labels["tunnel.enabled"] != "true" {
+		s.logger.Debug("service is not enabled",
 			slog.String("service", serviceName))
 		return nil
 	}
 
-	s.logger.Debug("processing service with hosts",
-		slog.String("service", serviceName),
-		slog.Int("host_count", len(hosts)),
-		slog.Any("hosts", hosts))
-
+	port := serviceMetaData.Spec.Labels["tunnel.port"]
+	hosts := serviceMetaData.Spec.Labels["tunnel.hostname"]
 	internalServiceURL := fmt.Sprintf("http://%s:%s", serviceName, port)
-	for _, h := range hosts {
 
+	for _, h := range strings.SplitN(hosts, ",", -1) {
 		existingConfig, exists := existingConfigs[h]
 
 		if err := s.cloudflareClient.UpdateTunnelConfig(s.ctx, h, internalServiceURL); err != nil {
-			return fmt.Errorf("failed to update tunnel config for %s: %w", h, err)
+			return err
 		}
 
 		isNew := !exists
