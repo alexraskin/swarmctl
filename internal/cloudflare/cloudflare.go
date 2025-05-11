@@ -114,6 +114,33 @@ func (c *CloudflareClient) CreateTunnelDNSRecord(ctx context.Context, zoneID str
 	return err
 }
 
+func (c *CloudflareClient) DeleteTunnelDNSRecord(ctx context.Context, recordID string, zoneID string) error {
+	_, err := c.client.DNS.Records.Delete(ctx, recordID, dns.RecordDeleteParams{
+		ZoneID: cloudflare.F(zoneID),
+	})
+	return err
+}
+
+func (c *CloudflareClient) GetTunnelDNSRecord(ctx context.Context, zoneID string, hostname string) (string, error) {
+	record, err := c.client.DNS.Records.List(ctx, dns.RecordListParams{
+		ZoneID: cloudflare.F(zoneID),
+		Name: cloudflare.F(dns.RecordListParamsName{
+			Contains: cloudflare.F(hostname),
+		}),
+		Type: cloudflare.F(dns.RecordListParamsType(dns.CNAMERecordTypeCNAME)),
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(record.Result) == 0 {
+		return "", fmt.Errorf("no record found for %q", hostname)
+	}
+	if len(record.Result) > 1 {
+		return "", fmt.Errorf("multiple records found for %q", hostname)
+	}
+	return record.Result[0].ID, nil
+}
+
 func (c *CloudflareClient) GetZoneID(ctx context.Context, hostname string) (string, error) {
 	domain, err := publicsuffix.EffectiveTLDPlusOne(hostname)
 	if err != nil {

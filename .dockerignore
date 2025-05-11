@@ -5,3 +5,5 @@ README.md
 .github/*
 Dockerfile
 LICENSE
+docker-compose.*.yml
+tunnel.env

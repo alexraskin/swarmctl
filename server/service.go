@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/swarm"
 )
 
 const (
@@ -19,122 +17,67 @@ const (
 	maxAge   = 1 * time.Hour
 )
 
-type existingConfig struct {
-	ID  string
-	URL string
+func (s *Server) startDockerMonitor() error {
+	go s.monitorServiceEvents()
+	go func() {
+		if err := s.dockerEventsMonitor(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+			s.logger.Error("Error reading Docker event", "error", err)
+		}
+	}()
+	s.logger.Debug("Docker events monitoring started")
+	return nil
 }
 
-func (s *Server) startCloudflare() error {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
+func (s *Server) monitorServiceEvents() error {
+	eventFilter := filters.NewArgs()
+	eventFilter.Add("type", "service")
+	eventFilter.Add("event", "create")
+	eventFilter.Add("event", "update")
 
-	slog.Debug("starting Cloudflare sync")
-
-	if err := s.cloudflareSync(); err != nil {
-		s.logger.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
-	}
+	s.logger.Debug("Starting service event monitor")
 
 	for {
-		select {
-		case <-ticker.C:
-			if err := s.cloudflareSync(); err != nil {
-				s.logger.Error("failed to sync Cloudflare hostnames", slog.Any("err", err))
+		msgs, errs := s.dockerClient.GetDockerEvents(s.ctx, eventFilter)
+
+		for {
+			select {
+			case <-s.ctx.Done():
+				s.logger.Debug("Stopping service monitor")
+				return nil
+
+			case err, ok := <-errs:
+				if !ok {
+					s.logger.Warn("Docker event error channel closed, reconnecting...")
+					go s.monitorServiceEvents()
+					return nil
+				}
+				if err != nil {
+					s.logger.Error("Error reading Docker event", "error", err)
+					time.Sleep(5 * time.Second)
+					continue
+				}
+
+			case msg := <-msgs:
+				name := msg.Actor.Attributes["name"]
+				svc, err := s.dockerClient.GetDockerService(name, s.ctx)
+				if err != nil {
+					s.logger.Error("Fetch service failed", slog.String("service", name), "error", err)
+					continue
+				}
+				if svc.Spec.Labels["cloudflared.tunnel.enabled"] != "true" {
+					s.logger.Debug("Service is not enabled for Cloudflare tunnel", slog.String("service", name))
+					continue
+				}
+
+				if err := s.cfSyncer.SyncService(s.ctx, svc); err != nil {
+					s.logger.Error("Cloudflare sync failed", slog.String("service", name), "error", err)
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				s.logger.Debug("Cloudflare sync succeeded", slog.String("service", name))
 			}
-		case <-s.ctx.Done():
-			s.logger.Info("Stopping Cloudflare sync ticker")
-			return nil
 		}
 	}
-}
-
-func (s *Server) cloudflareSync() error {
-	existingConfigs, err := s.getExistingTunnelConfigs()
-	if err != nil {
-		return err
-	}
-
-	services, err := s.dockerClient.GetDockerServices(s.ctx)
-	if err != nil {
-		return fmt.Errorf("get docker services: %w", err)
-	}
-
-	for _, service := range services {
-		if err := s.processService(service, existingConfigs); err != nil {
-			s.logger.Error("failed to process service", slog.String("service", service.Spec.Name), slog.Any("err", err))
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) getExistingTunnelConfigs() (map[string]existingConfig, error) {
-	existingCfgs, err := s.cloudflareClient.GetTunnelConfig(s.ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list existing tunnel configs: %w", err)
-	}
-
-	existing := make(map[string]existingConfig)
-	for _, cfg := range existingCfgs.Config.Ingress {
-		existing[cfg.Hostname] = existingConfig{
-			ID:  cfg.Hostname,
-			URL: cfg.Service,
-		}
-	}
-
-	return existing, nil
-}
-
-func (s *Server) processService(service swarm.Service, existingConfigs map[string]existingConfig) error {
-	serviceName := service.Spec.Name
-
-	serviceMetaData, err := s.dockerClient.GetDockerService(serviceName, s.ctx)
-	if err != nil {
-		return err
-	}
-
-	if serviceMetaData.Spec.Labels["tunnel.enabled"] != "true" {
-		s.logger.Debug("service is not enabled",
-			slog.String("service", serviceName))
-		return nil
-	}
-
-	port := serviceMetaData.Spec.Labels["tunnel.port"]
-	hosts := serviceMetaData.Spec.Labels["tunnel.hostname"]
-	internalServiceURL := fmt.Sprintf("http://%s:%s", serviceName, port)
-
-	for _, h := range strings.SplitN(hosts, ",", -1) {
-		existingConfig, exists := existingConfigs[h]
-
-		if err := s.cloudflareClient.UpdateTunnelConfig(s.ctx, h, internalServiceURL); err != nil {
-			return err
-		}
-
-		isNew := !exists
-		isChanged := exists && existingConfig.URL != internalServiceURL
-
-		if isNew {
-			s.logger.Debug("created new tunnel rule", slog.String("hostname", h), slog.String("service", internalServiceURL))
-			zoneID, err := s.cloudflareClient.GetZoneID(s.ctx, h)
-			if err != nil {
-				return fmt.Errorf("failed to get zone ID for hostname %s: %w", h, err)
-			}
-
-			err = s.cloudflareClient.CreateTunnelDNSRecord(s.ctx, zoneID, h)
-			if err != nil {
-				return fmt.Errorf("failed to create DNS record for hostname %s: %w", h, err)
-			}
-
-			s.logger.Debug("created DNS record", slog.String("hostname", h), slog.String("zoneID", zoneID))
-		} else if isChanged {
-			s.logger.Debug("updated existing tunnel rule", slog.String("hostname", h),
-				slog.String("old_service", existingConfig.URL),
-				slog.String("new_service", internalServiceURL))
-		} else {
-			s.logger.Debug("tunnel rule already exists and is up-to-date", slog.String("hostname", h))
-		}
-	}
-
-	return nil
 }
 
 func (s *Server) dockerEventsMonitor() error {
@@ -142,6 +85,7 @@ func (s *Server) dockerEventsMonitor() error {
 	eventFilter.Add("type", "container")
 	eventFilter.Add("event", "die")
 	eventFilter.Add("event", "restart")
+	eventFilter.Add("event", "crash")
 
 	for {
 		msgs, errs := s.dockerClient.GetDockerEvents(s.ctx, eventFilter)
@@ -151,7 +95,8 @@ func (s *Server) dockerEventsMonitor() error {
 			case err, ok := <-errs:
 				if !ok {
 					s.logger.Warn("Docker event error channel closed, reconnecting...")
-					return s.dockerEventsMonitor()
+					go s.dockerEventsMonitor()
+					return nil
 				}
 				if err != nil {
 					s.logger.Error("Error reading Docker event", "error", err)
@@ -194,16 +139,6 @@ func (s *Server) dockerEventsMonitor() error {
 			}
 		}
 	}
-}
-
-func (s *Server) startDockerMonitor() error {
-	go func() {
-		if err := s.dockerEventsMonitor(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-			s.logger.Error("Error reading Docker event", "error", err)
-		}
-	}()
-	s.logger.Debug("Docker events monitoring started")
-	return nil
 }
 
 func (s *Server) startEventCleanup(interval time.Duration, maxAge time.Duration) {

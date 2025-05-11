@@ -16,16 +16,17 @@ import (
 )
 
 type Server struct {
-	ctx              context.Context
-	version          ver.Version
-	config           *Config
-	port             string
-	server           *http.Server
-	dockerClient     *docker.DockerClient
-	cloudflareClient *cloudflare.CloudflareClient
-	pushoverClient   *pushover.PushoverClient
-	logger           *slog.Logger
-	recentEvents     sync.Map
+	ctx            context.Context
+	version        ver.Version
+	config         *Config
+	port           string
+	server         *http.Server
+	dockerClient   *docker.DockerClient
+	pushoverClient *pushover.PushoverClient
+	logger         *slog.Logger
+	recentEvents   sync.Map
+	cfSyncer       *cloudflare.Syncer
+	cacheMu        sync.RWMutex
 }
 
 func NewServer(
@@ -34,21 +35,21 @@ func NewServer(
 	config *Config,
 	port string,
 	dockerClient *docker.DockerClient,
-	cloudflareClient *cloudflare.CloudflareClient,
 	pushoverClient *pushover.PushoverClient,
 	logger *slog.Logger,
+	cfSyncer *cloudflare.Syncer,
 ) *Server {
 
 	s := &Server{
-		ctx:              ctx,
-		version:          version,
-		config:           config,
-		port:             port,
-		dockerClient:     dockerClient,
-		cloudflareClient: cloudflareClient,
-		pushoverClient:   pushoverClient,
-		logger:           logger,
-		recentEvents:     sync.Map{},
+		ctx:            ctx,
+		version:        version,
+		config:         config,
+		port:           port,
+		dockerClient:   dockerClient,
+		pushoverClient: pushoverClient,
+		logger:         logger,
+		recentEvents:   sync.Map{},
+		cfSyncer:       cfSyncer,
 	}
 
 	s.server = &http.Server{
@@ -62,7 +63,6 @@ func NewServer(
 func (s *Server) Start() {
 
 	go s.startDockerMonitor()
-	go s.startCloudflare()
 	go s.startEventCleanup(5*time.Minute, 10*time.Minute)
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

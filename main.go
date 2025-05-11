@@ -43,6 +43,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	cfSyncer := cloudflare.NewSyncer(cloudflareClient)
+
 	pushoverClient := pushover.NewPushoverClient(config.PushoverAPIKey)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,9 +56,9 @@ func main() {
 		config,
 		*port,
 		dockerClient,
-		cloudflareClient,
 		pushoverClient,
 		logger,
+		cfSyncer,
 	)
 
 	go s.Start()
