@@ -51,3 +51,9 @@ jobs:
           method: "POST"
           timeout: 60000
           customHeaders: '{"Authorization": "Bearer ${{ secrets.AUTH_TOKEN }}"}'
+      - name: Shoutrrr
+        uses: containrrr/shoutrrr-action@v1
+        with:
+          url: ${{ secrets.SHOUTRRR_URL }}
+          title: Deployed swarmctl:${{ github.sha }} to swarmctl
+          message: See changes at ${{ github.event.compare }}.
