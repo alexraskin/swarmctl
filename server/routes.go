@@ -41,8 +41,10 @@ func (s *Server) Routes() http.Handler {
 	r.Get("/metrics", s.metricsHandler)
 
 	r.Group(func(r chi.Router) {
-		r.Use(middle.IPCheck)
-		r.Post("/update/{serviceName}", s.updateService)
+		r.Route("/v1", func(r chi.Router) {
+			r.Use(middle.IPCheck)
+			r.Post("/update/{serviceName}", s.updateService)
+		})
 	})
 
 	r.NotFound(s.notFound)
