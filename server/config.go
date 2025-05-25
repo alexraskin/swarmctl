@@ -38,11 +38,13 @@ func getSecretOrEnv(key string) string {
 	value := os.Getenv(key)
 
 	if strings.HasPrefix(value, "/") {
-		data, err := os.ReadFile(value)
-		if err != nil {
-			log.Fatalf("Failed to read secret file for %s: %v", key, err)
+		if _, err := os.Stat(value); err == nil {
+			data, err := os.ReadFile(value)
+			if err != nil {
+				log.Fatalf("Failed to read secret file for %s: %v", key, err)
+			}
+			return strings.TrimSpace(string(data))
 		}
-		return strings.TrimSpace(string(data))
 	}
 
 	if value == "" {

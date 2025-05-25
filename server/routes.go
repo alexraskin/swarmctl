@@ -1,20 +1,19 @@
 package server
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"runtime"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
-)
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-var statsStartTime = time.Now()
+	"github.com/alexraskin/swarmctl/internal/metrics"
+	"github.com/alexraskin/swarmctl/internal/middle"
+)
 
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
@@ -24,55 +23,51 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/ping"))
-	r.Use(s.authMiddleware(s.config.AuthToken))
+	r.Use(middle.AuthMiddleware(s.config.AuthToken))
+	r.Use(metrics.MetricsMiddleware)
+
 	r.Use(httprate.Limit(
 		10,
 		time.Minute,
 		httprate.WithLimitHandler(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				metrics.IncrementRateLimitedRequests()
 				http.Error(w, "Too many requests", http.StatusTooManyRequests)
 			}),
 		),
 	))
 
 	r.Get("/version", s.serverVersion)
-	r.Get("/stats", s.stats)
-	r.Post("/v1/update/{serviceName}", s.updateService)
+	r.Get("/metrics", s.metricsHandler)
 
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "Not found", http.StatusNotFound)
+	r.Group(func(r chi.Router) {
+		r.Use(middle.IPCheck)
+		r.Post("/update/{serviceName}", s.updateService)
 	})
+
+	r.NotFound(s.notFound)
 
 	return r
 }
 
-func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
-	stats := runtime.MemStats{}
-	runtime.ReadMemStats(&stats)
-
-	data := struct {
-		Go               string
-		Uptime           string
-		MemoryUsed       string
-		TotalMemory      string
-		GarbageCollected string
-		Goroutines       int
-	}{
-		Go:               runtime.Version(),
-		Uptime:           s.getDurationString(time.Since(statsStartTime)),
-		MemoryUsed:       humanize.Bytes(stats.Alloc),
-		TotalMemory:      humanize.Bytes(stats.Sys),
-		GarbageCollected: humanize.Bytes(stats.TotalAlloc),
-		Goroutines:       runtime.NumGoroutine(),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(data)
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Not found", http.StatusNotFound)
 }
 
 func (s *Server) serverVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprint(w, s.version.Format())
+}
+
+func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
+	count := 0
+	s.recentEvents.Range(func(key, value any) bool {
+		count++
+		return true
+	})
+	metrics.UpdateRecentEventsCount(count)
+
+	promhttp.Handler().ServeHTTP(w, r)
 }
 
 func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
@@ -84,34 +79,18 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	response, err := s.dockerClient.UpdateDockerService(serviceName, image, r.Context())
+	duration := time.Since(start).Seconds()
+
 	if err != nil {
+		metrics.RecordDockerServiceUpdate(serviceName, "error", duration)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	metrics.RecordDockerServiceUpdate(serviceName, "success", duration)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
-}
-
-func (s *Server) authMiddleware(expectedToken string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := r.Header.Get("Authorization")
-			if len(token) < 8 || subtle.ConstantTimeCompare([]byte(token[7:]), []byte(expectedToken)) != 1 {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func (s *Server) getDurationString(duration time.Duration) string {
-	return fmt.Sprintf(
-		"%0.2d:%02d:%02d",
-		int(duration.Hours()),
-		int(duration.Minutes())%60,
-		int(duration.Seconds())%60,
-	)
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/alexraskin/swarmctl/internal/metrics"
 	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/docker/docker/api/types/filters"
 )
@@ -59,6 +60,8 @@ func (s *Server) monitorServiceEvents() error {
 
 			case msg := <-msgs:
 				name := msg.Actor.Attributes["name"]
+				metrics.RecordDockerEvent(string(msg.Action), name)
+
 				svc, err := s.dockerClient.GetDockerService(name, s.ctx)
 				if err != nil {
 					s.logger.Error("Fetch service failed", slog.String("service", name), "error", err)
@@ -69,11 +72,16 @@ func (s *Server) monitorServiceEvents() error {
 					continue
 				}
 
+				start := time.Now()
 				if err := s.cfSyncer.SyncService(s.ctx, svc); err != nil {
+					duration := time.Since(start).Seconds()
+					metrics.RecordCloudflareSync("error", duration)
 					s.logger.Error("Cloudflare sync failed", slog.String("service", name), "error", err)
 					time.Sleep(5 * time.Second)
 					continue
 				}
+				duration := time.Since(start).Seconds()
+				metrics.RecordCloudflareSync("success", duration)
 				s.logger.Debug("Cloudflare sync succeeded", slog.String("service", name))
 			}
 		}
@@ -129,7 +137,10 @@ func (s *Server) dockerEventsMonitor() error {
 
 				err := s.pushoverClient.SendNotification(pushoverMsg)
 				if err != nil {
+					metrics.RecordPushoverNotification("error")
 					s.logger.Error("Error sending Pushover notification", "error", err)
+				} else {
+					metrics.RecordPushoverNotification("success")
 				}
 
 				s.logger.Debug("Container event", "name", name, "containerID", containerID, "status", status, "exitCode", exitCode, "timestamp", time.Unix(msg.Time, 0).Format(time.RFC3339))
