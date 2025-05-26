@@ -25,7 +25,7 @@ labels:
     - "cloudflared.tunnel.port=80"
     - "cloudflared.tunnel.hostname=your-domain.com"
 ```
-It also supports multiple hostnames, but you need to add the port to the hostname. Example:
+It also supports multiple hostnames. Example:
 
 ```yaml
 labels:
