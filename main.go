@@ -12,7 +12,6 @@ import (
 
 	"github.com/alexraskin/swarmctl/internal/cloudflare"
 	"github.com/alexraskin/swarmctl/internal/docker"
-	"github.com/alexraskin/swarmctl/internal/middle"
 	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/alexraskin/swarmctl/server"
@@ -47,13 +46,6 @@ func main() {
 	cfSyncer := cloudflare.NewSyncer(cloudflareClient)
 
 	pushoverClient := pushover.NewPushoverClient(config.PushoverAPIKey)
-
-	go func() {
-		for {
-			middle.UpdateIPList(*debug, logger)
-			time.Sleep(24 * time.Hour)
-		}
-	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

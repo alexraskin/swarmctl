@@ -42,7 +42,6 @@ func (s *Server) Routes() http.Handler {
 
 	r.Group(func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
-			r.Use(middle.IPCheck)
 			r.Post("/update/{serviceName}", s.updateService)
 		})
 	})
