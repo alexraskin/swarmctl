@@ -8,6 +8,7 @@ Docker Swarm tool:
 - Cloudflare Tunnel integration with DNS management
 - Pushover notifications for service updates
 - Prometheus metrics
+- Logging to Discord
 
 1. Copy the `.env.example` file to `.env` and fill in the values.
 2. Deploy the swarmctl server to the swarm cluster. Example: [docker-compose.swarmctl.yml](https://github.com/alexraskin/infrastructure/blob/main/swarmctl/docker-compose.swarmctl.yml) file.

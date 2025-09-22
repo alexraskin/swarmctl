@@ -76,6 +76,7 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 	image := r.URL.Query().Get("image")
 
 	if serviceName == "" || image == "" {
+		s.logger.Error("Request missing serviceName or image", "serviceName", serviceName, "image", image, "requestID", middleware.GetReqID(r.Context()))
 		http.Error(w, "Missing serviceName in path or image in query", http.StatusBadRequest)
 		return
 	}
@@ -86,12 +87,13 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		metrics.RecordDockerServiceUpdate(serviceName, "error", duration)
+		s.logger.Error("Error updating service", "error", err, "serviceName", serviceName, "image", image, "requestID", middleware.GetReqID(r.Context()))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	metrics.RecordDockerServiceUpdate(serviceName, "success", duration)
-
+	s.logger.Info("Service updated", "serviceName", serviceName, "image", image, "requestID", middleware.GetReqID(r.Context()))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }

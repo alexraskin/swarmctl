@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/alexraskin/swarmctl/internal/cloudflare"
 	"github.com/alexraskin/swarmctl/internal/docker"
+	"github.com/alexraskin/swarmctl/internal/logger"
 	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/alexraskin/swarmctl/server"
@@ -24,23 +24,28 @@ func main() {
 
 	version := ver.Load()
 
-	logger := slog.Default()
+	config := server.LoadConfig()
+
+	logLevel := slog.LevelInfo
 	if *debug {
-		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		}))
+		logLevel = slog.LevelDebug
 	}
 
-	config := server.NewConfigFromEnv()
+	logger, err := logger.New(logLevel, config.WebhookURL, config.Environment, "swarmctl")
+	if err != nil {
+		panic(err)
+	}
 
 	dockerClient, err := docker.NewDockerClient()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("failed to create docker client", "error", err)
+		os.Exit(-1)
 	}
 
 	cloudflareClient, err := cloudflare.NewCloudflareClient(config.CloudflareAPIKey, config.CloudflareAPIEmail, config.CloudflareTunnelID, config.CloudflareAccountID)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("failed to create cloudflare client", "error", err)
+		os.Exit(-1)
 	}
 
 	cfSyncer := cloudflare.NewSyncer(cloudflareClient)
@@ -63,7 +68,7 @@ func main() {
 
 	go s.Start()
 
-	logger.Debug("Starting swarmctl...", slog.String("port", *port), slog.String("version", version.Version), slog.String("revision", version.Revision), slog.String("build-time", version.BuildTime))
+	logger.Info("Starting swarmctl...", slog.String("port", *port), slog.String("version", version.Version), slog.String("revision", version.Revision), slog.String("build-time", version.BuildTime))
 
 	si := make(chan os.Signal, 1)
 	signal.Notify(si, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -75,7 +80,7 @@ func main() {
 	defer cancel()
 
 	if err := s.Shutdown(ctx); err != nil {
-		logger.Error("graceful shutdown failed", slog.Any("err", err))
+		logger.Error("graceful shutdown failed", "error", err)
 		s.Close()
 	}
 }

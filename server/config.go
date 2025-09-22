@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -16,12 +16,14 @@ type Config struct {
 	CloudflareAccountID string
 	PushoverAPIKey      string
 	PushoverRecipient   string
+	Environment         string
+	WebhookURL          string
 }
 
-func NewConfigFromEnv() *Config {
+func LoadConfig() *Config {
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("No .env file found or error reading .env:", err)
+		slog.Error("No .env file found or error reading .env:", "error", err)
 	}
 	return &Config{
 		AuthToken:           getSecretOrEnv("AUTH_TOKEN"),
@@ -31,6 +33,8 @@ func NewConfigFromEnv() *Config {
 		CloudflareAccountID: getSecretOrEnv("CLOUDFLARE_ACCOUNT_ID"),
 		PushoverAPIKey:      getSecretOrEnv("PUSHOVER_API_KEY"),
 		PushoverRecipient:   getSecretOrEnv("PUSHOVER_RECIPIENT"),
+		Environment:         getSecretOrEnv("ENVIROMENT"),
+		WebhookURL:          getSecretOrEnv("WEBHOOK_URL"),
 	}
 }
 
@@ -41,14 +45,15 @@ func getSecretOrEnv(key string) string {
 		if _, err := os.Stat(value); err == nil {
 			data, err := os.ReadFile(value)
 			if err != nil {
-				log.Fatalf("Failed to read secret file for %s: %v", key, err)
+				slog.Error("Failed to read secret file for %s", "error", err)
 			}
 			return strings.TrimSpace(string(data))
 		}
 	}
 
 	if value == "" {
-		log.Fatalf("Environment variable %s is not set", key)
+		slog.Error("Environment variable %s is not set", "error", key)
+		os.Exit(-1)
 	}
 
 	return value
