@@ -15,18 +15,26 @@ import (
 	"github.com/alexraskin/swarmctl/internal/ver"
 )
 
+type pendingRemoval struct {
+	ServiceName string
+	RemovedAt   time.Time
+}
+
 type Server struct {
-	ctx            context.Context
-	version        ver.Version
-	config         *Config
-	port           string
-	server         *http.Server
-	dockerClient   *docker.DockerClient
-	pushoverClient *pushover.PushoverClient
-	logger         *slog.Logger
-	recentEvents   sync.Map
-	cfSyncer       *cloudflare.Syncer
-	cacheMu        sync.RWMutex
+	ctx              context.Context
+	version          ver.Version
+	config           *Config
+	port             string
+	server           *http.Server
+	dockerClient     *docker.DockerClient
+	pushoverClient   *pushover.PushoverClient
+	logger           *slog.Logger
+	recentEvents     sync.Map
+	cfClient         cloudflare.API
+	cfSyncer         *cloudflare.Syncer
+	cacheMu          sync.RWMutex
+	pendingRemovals  sync.Map // map[string]pendingRemoval
+	serviceHostnames sync.Map // map[serviceName][]string - cache of tunnel-enabled services
 }
 
 func NewServer(
@@ -37,6 +45,7 @@ func NewServer(
 	dockerClient *docker.DockerClient,
 	pushoverClient *pushover.PushoverClient,
 	logger *slog.Logger,
+	cfClient cloudflare.API,
 	cfSyncer *cloudflare.Syncer,
 ) *Server {
 
@@ -49,6 +58,7 @@ func NewServer(
 		pushoverClient: pushoverClient,
 		logger:         logger,
 		recentEvents:   sync.Map{},
+		cfClient:       cfClient,
 		cfSyncer:       cfSyncer,
 	}
 
@@ -64,6 +74,7 @@ func (s *Server) Start() {
 
 	go s.startDockerMonitor()
 	go s.startEventCleanup(5*time.Minute, 10*time.Minute)
+	go s.startRemovalProcessor()
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		s.logger.Error("Error while listening", slog.Any("err", err))

@@ -63,6 +63,7 @@ func main() {
 		dockerClient,
 		pushoverClient,
 		logger,
+		cloudflareClient,
 		cfSyncer,
 	)
 
@@ -76,10 +77,10 @@ func main() {
 	<-si
 	logger.Debug("shutting down web server")
 
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
 
-	if err := s.Shutdown(ctx); err != nil {
+	if err := s.Shutdown(shutdownCtx); err != nil {
 		logger.Error("graceful shutdown failed", "error", err)
 		s.Close()
 	}

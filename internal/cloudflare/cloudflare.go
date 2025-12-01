@@ -15,8 +15,6 @@ import (
 
 type CloudflareClient struct {
 	client              *cloudflare.Client
-	apiKey              string
-	apiEmail            string
 	cloudflareTunnelID  string
 	cloudflareAccountID string
 }
@@ -26,7 +24,11 @@ func NewCloudflareClient(apiKey string, apiEmail string, cloudflareTunnelID stri
 		option.WithAPIKey(apiKey),
 		option.WithAPIEmail(apiEmail),
 	)
-	return &CloudflareClient{client: client, apiKey: apiKey, apiEmail: apiEmail, cloudflareTunnelID: cloudflareTunnelID, cloudflareAccountID: cloudflareAccountID}, nil
+	return &CloudflareClient{
+		client:              client,
+		cloudflareTunnelID:  cloudflareTunnelID,
+		cloudflareAccountID: cloudflareAccountID,
+	}, nil
 }
 
 func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
@@ -36,13 +38,20 @@ func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, ser
 		return fmt.Errorf("failed to get existing tunnel config: %w", err)
 	}
 
-	ingressList := []zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
-		{
+	ingressList := []zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{}
+
+	// If serviceURL is not empty, add/update the hostname at the beginning
+	if serviceURL != "" {
+		ingressList = append(ingressList, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
 			Hostname: cloudflare.F(hostname),
 			Service:  cloudflare.F(serviceURL),
-		},
+		})
 	}
 
+	// Add all existing entries except:
+	// - The 404 catch-all (we'll add it at the end)
+	// - The hostname we're updating/removing
+	// - Comma-separated hostnames
 	for _, ingress := range existingConfig.Config.Ingress {
 		if ingress.Service == "http_status:404" {
 			continue
@@ -62,6 +71,7 @@ func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, ser
 		})
 	}
 
+	// Always add the 404 catch-all at the end
 	ingressList = append(ingressList, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
 		Service: cloudflare.F("http_status:404"),
 	})

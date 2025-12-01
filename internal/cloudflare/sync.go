@@ -65,9 +65,14 @@ func (s *Syncer) SyncService(ctx context.Context, svc *swarm.Service) error {
 	labels := svc.Spec.Labels
 	target := fmt.Sprintf("http://%s:%s", svc.Spec.Name, labels["cloudflared.tunnel.port"])
 
-	hosts := []string{labels["cloudflared.tunnel.hostname"]}
+	hosts := []string{}
+
+	// Collect all hostname labels
+	if primary := labels["cloudflared.tunnel.hostname"]; primary != "" {
+		hosts = append(hosts, primary)
+	}
 	for k, v := range labels {
-		if strings.HasSuffix(k, ".hostname") && v != "" {
+		if k != "cloudflared.tunnel.hostname" && strings.HasSuffix(k, ".hostname") && v != "" {
 			hosts = append(hosts, v)
 		}
 	}
