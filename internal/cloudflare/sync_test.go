@@ -11,14 +11,27 @@ import (
 
 // fakeAPI is an in-memory implementation of the API interface for tests.
 type fakeAPI struct {
-	ingress    []zero_trust.TunnelCloudflaredConfigurationGetResponseConfigIngress
-	updates    map[string]string // hostname -> targetURL
-	dnsCreated []string
-	zoneCalls  int
+	ingress      []zero_trust.TunnelCloudflaredConfigurationGetResponseConfigIngress
+	updates      map[string]string // hostname -> targetURL
+	dnsCreated   []string
+	zoneCalls    int
+	accessApps   map[string]string // hostname -> policyID
+	accessDelete []string
 }
 
 func newFakeAPI() *fakeAPI {
-	return &fakeAPI{updates: map[string]string{}}
+	return &fakeAPI{updates: map[string]string{}, accessApps: map[string]string{}}
+}
+
+func (f *fakeAPI) EnsureAccessApp(ctx context.Context, hostname, policyID string) error {
+	f.accessApps[hostname] = policyID
+	return nil
+}
+
+func (f *fakeAPI) DeleteAccessApp(ctx context.Context, hostname string) error {
+	f.accessDelete = append(f.accessDelete, hostname)
+	delete(f.accessApps, hostname)
+	return nil
 }
 
 func (f *fakeAPI) GetTunnelConfig(ctx context.Context) (*zero_trust.TunnelCloudflaredConfigurationGetResponse, error) {
@@ -107,6 +120,37 @@ func TestSyncService_UnchangedHostIsSkipped(t *testing.T) {
 	}
 	if api.zoneCalls != 0 {
 		t.Fatalf("zoneCalls on unchanged sync = %d, want 0", api.zoneCalls)
+	}
+}
+
+func TestSyncService_AccessPolicyProtectsHostname(t *testing.T) {
+	api := newFakeAPI()
+	syncer := NewSyncer(api)
+
+	svc := newService("svc", "80", "a.example.com")
+	svc.Spec.Labels["cloudflared.tunnel.access.policy"] = "policy-abc"
+
+	if err := syncer.SyncService(context.Background(), svc); err != nil {
+		t.Fatalf("SyncService: %v", err)
+	}
+
+	if got := api.accessApps["a.example.com"]; got != "policy-abc" {
+		t.Fatalf("access app policy = %q, want %q", got, "policy-abc")
+	}
+}
+
+func TestSyncService_NoAccessPolicyLeavesHostUnprotected(t *testing.T) {
+	api := newFakeAPI()
+	syncer := NewSyncer(api)
+
+	svc := newService("svc", "80", "a.example.com")
+
+	if err := syncer.SyncService(context.Background(), svc); err != nil {
+		t.Fatalf("SyncService: %v", err)
+	}
+
+	if len(api.accessApps) != 0 {
+		t.Fatalf("accessApps = %v, want none when no policy label set", api.accessApps)
 	}
 }
 

@@ -22,6 +22,8 @@ type pendingRemoval struct {
 
 type Server struct {
 	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 	version          ver.Version
 	config           *Config
 	port             string
@@ -49,8 +51,11 @@ func NewServer(
 	cfSyncer *cloudflare.Syncer,
 ) *Server {
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	s := &Server{
 		ctx:            ctx,
+		cancel:         cancel,
 		version:        version,
 		config:         config,
 		port:           port,
@@ -71,14 +76,36 @@ func NewServer(
 }
 
 func (s *Server) Start() {
-
-	go s.startDockerMonitor()
-	go s.startEventCleanup(5*time.Minute, 10*time.Minute)
-	go s.startRemovalProcessor()
+	s.startWorkers()
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		s.logger.Error("Error while listening", slog.Any("err", err))
 		os.Exit(-1)
+	}
+}
+
+// startWorkers launches every background goroutine the server owns. Each runs
+// until the server context is cancelled; Shutdown waits for them to exit.
+func (s *Server) startWorkers() {
+	workers := []struct {
+		name string
+		run  func()
+	}{
+		{"service-events", s.monitorServiceEvents},
+		{"service-removals", s.monitorServiceRemovals},
+		{"container-events", s.monitorContainerEvents},
+		{"event-cleanup", func() { s.runEventCleanup(5*time.Minute, 10*time.Minute) }},
+		{"removal-processor", s.startRemovalProcessor},
+	}
+
+	for _, w := range workers {
+		s.wg.Add(1)
+		go func(name string, run func()) {
+			defer s.wg.Done()
+			s.logger.Debug("background worker started", slog.String("worker", name))
+			run()
+			s.logger.Debug("background worker stopped", slog.String("worker", name))
+		}(w.name, w.run)
 	}
 }
 
@@ -89,5 +116,8 @@ func (s *Server) Close() {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.server.Shutdown(ctx)
+	err := s.server.Shutdown(ctx)
+	s.cancel() // signal background workers to stop
+	s.wg.Wait()
+	return err
 }

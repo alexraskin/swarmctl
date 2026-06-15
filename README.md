@@ -36,6 +36,29 @@ labels:
     - "cloudflared.tunnel.1.hostname=2.your-domain.com"
 ```
 
+### Protecting a service behind Cloudflare Access (SSO)
+
+Add the `cloudflared.tunnel.access.policy` label with the ID of an existing
+[reusable Access policy](https://developers.cloudflare.com/cloudflare-one/policies/access/). swarmctl
+will create a self-hosted Access application for each hostname, attach that
+policy, and remove the application when the service is removed.
+
+```yaml
+labels:
+    - "cloudflared.tunnel.enabled=true"
+    - "cloudflared.tunnel.port=80"
+    - "cloudflared.tunnel.hostname=your-domain.com"
+    - "cloudflared.tunnel.access.policy=<reusable-access-policy-id>"
+```
+
+List your reusable policy IDs with:
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/policies" \
+  -H "X-Auth-Email: $CLOUDFLARE_API_EMAIL" -H "X-Auth-Key: $CLOUDFLARE_API_KEY" \
+  | jq '.result[] | {id, name, decision}'
+```
+
 4. Deploy the services to the swarm cluster.
 
 ```bash

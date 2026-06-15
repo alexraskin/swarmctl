@@ -17,6 +17,11 @@ type API interface {
 	CreateTunnelDNSRecord(ctx context.Context, zoneID, hostname string) error
 	DeleteTunnelDNSRecord(ctx context.Context, recordID string, zoneID string) error
 	GetTunnelDNSRecord(ctx context.Context, zoneID string, hostname string) (string, error)
+	// EnsureAccessApp makes sure a self-hosted Cloudflare Access application
+	// exists for hostname, protected by the reusable policy policyID. Idempotent.
+	EnsureAccessApp(ctx context.Context, hostname, policyID string) error
+	// DeleteAccessApp removes the Access application protecting hostname, if any.
+	DeleteAccessApp(ctx context.Context, hostname string) error
 }
 
 type existingConfig struct {
@@ -74,6 +79,7 @@ func (s *Syncer) SyncService(ctx context.Context, svc *swarm.Service) error {
 
 	labels := svc.Spec.Labels
 	target := fmt.Sprintf("http://%s:%s", svc.Spec.Name, labels["cloudflared.tunnel.port"])
+	accessPolicy := labels["cloudflared.tunnel.access.policy"]
 
 	hosts := []string{}
 
@@ -114,6 +120,14 @@ func (s *Syncer) SyncService(ctx context.Context, svc *swarm.Service) error {
 			s.mu.Lock()
 			s.cache[h] = existingConfig{ID: h, URL: target}
 			s.mu.Unlock()
+
+			// If the service opted into SSO, ensure an Access application
+			// protects this hostname. Idempotent, so safe to call every sync.
+			if accessPolicy != "" {
+				if err := s.client.EnsureAccessApp(ctx, h, accessPolicy); err != nil {
+					return fmt.Errorf("access %s: %w", h, err)
+				}
+			}
 		}
 	}
 	return nil

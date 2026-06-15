@@ -52,6 +52,7 @@ Services opt in with Docker labels — both `SyncService` and `extractHostnames`
 - `cloudflared.tunnel.port=<port>` — tunnel target becomes `http://<serviceName>:<port>`.
 - `cloudflared.tunnel.hostname=host` — primary hostname; comma-separated for multiple.
 - `cloudflared.tunnel.N.hostname=host` — any label ending in `.hostname` adds more hostnames.
+- `cloudflared.tunnel.access.policy=<policyID>` — optional. If set, swarmctl ensures a self-hosted Cloudflare Access (SSO) application protects each hostname, attached to the given reusable Access policy ID. The Access app is removed during removal reconciliation. Idempotent (`EnsureAccessApp`/`DeleteAccessApp` in `internal/cloudflare/cloudflare.go`).
 
 ## HTTP surface (`server/routes.go`)
 

@@ -8,6 +8,7 @@ import (
 	"github.com/cloudflare/cloudflare-go/v4"
 	"github.com/cloudflare/cloudflare-go/v4/dns"
 	"github.com/cloudflare/cloudflare-go/v4/option"
+	"github.com/cloudflare/cloudflare-go/v4/shared"
 	"github.com/cloudflare/cloudflare-go/v4/zero_trust"
 	"github.com/cloudflare/cloudflare-go/v4/zones"
 	"golang.org/x/net/publicsuffix"
@@ -169,6 +170,68 @@ func (c *CloudflareClient) GetTunnelDNSRecord(ctx context.Context, zoneID string
 		return "", fmt.Errorf("multiple records found for %q", hostname)
 	}
 	return record.Result[0].ID, nil
+}
+
+// findAccessApp returns the ID of the self-hosted Access application whose
+// domain exactly matches hostname, if one exists.
+func (c *CloudflareClient) findAccessApp(ctx context.Context, hostname string) (string, bool, error) {
+	page, err := c.client.ZeroTrust.Access.Applications.List(ctx, zero_trust.AccessApplicationListParams{
+		AccountID: cloudflare.F(c.cloudflareAccountID),
+		Domain:    cloudflare.F(hostname),
+	})
+	if err != nil {
+		return "", false, err
+	}
+	for _, app := range page.Result {
+		if app.Domain == hostname {
+			return app.ID, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func (c *CloudflareClient) EnsureAccessApp(ctx context.Context, hostname, policyID string) error {
+	_, found, err := c.findAccessApp(ctx, hostname)
+	if err != nil {
+		return fmt.Errorf("listing access apps for %q: %w", hostname, err)
+	}
+	if found {
+		return nil
+	}
+
+	_, err = c.client.ZeroTrust.Access.Applications.New(ctx, zero_trust.AccessApplicationNewParams{
+		AccountID: cloudflare.F(c.cloudflareAccountID),
+		Body: zero_trust.AccessApplicationNewParamsBodySelfHostedApplication{
+			Type:   cloudflare.F("self_hosted"),
+			Name:   cloudflare.F(hostname),
+			Domain: cloudflare.F(hostname),
+			Policies: cloudflare.F([]zero_trust.AccessApplicationNewParamsBodySelfHostedApplicationPolicyUnion{
+				shared.UnionString(policyID),
+			}),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("creating access app for %q: %w", hostname, err)
+	}
+	return nil
+}
+
+func (c *CloudflareClient) DeleteAccessApp(ctx context.Context, hostname string) error {
+	id, found, err := c.findAccessApp(ctx, hostname)
+	if err != nil {
+		return fmt.Errorf("listing access apps for %q: %w", hostname, err)
+	}
+	if !found {
+		return nil
+	}
+
+	_, err = c.client.ZeroTrust.Access.Applications.Delete(ctx, id, zero_trust.AccessApplicationDeleteParams{
+		AccountID: cloudflare.F(c.cloudflareAccountID),
+	})
+	if err != nil {
+		return fmt.Errorf("deleting access app %q: %w", hostname, err)
+	}
+	return nil
 }
 
 func (c *CloudflareClient) GetZoneID(ctx context.Context, hostname string) (string, error) {
