@@ -16,7 +16,7 @@ Docker Swarm tool:
 After the swarmctl server is deployed, you can use it to update the services in the swarm cluster.
 
 ```bash
-curl -X POST -H "Authorization: your-token" https://swarmctl.your-domain.com/v1/update/your-service?image=your-image
+curl -X POST -H "Authorization: Bearer your-token" https://swarmctl.your-domain.com/v1/update/your-service?image=your-image
 ```
 3. Add docker labels to the services you want to update. Example:
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/cloudflare/cloudflare-go/v4"
 	"github.com/cloudflare/cloudflare-go/v4/dns"
@@ -17,6 +18,10 @@ type CloudflareClient struct {
 	client              *cloudflare.Client
 	cloudflareTunnelID  string
 	cloudflareAccountID string
+	// configMu serializes the read-modify-write of the tunnel ingress config so
+	// concurrent callers (service-event sync vs. removal reconciler) cannot lose
+	// each other's updates.
+	configMu sync.Mutex
 }
 
 func NewCloudflareClient(apiKey string, apiEmail string, cloudflareTunnelID string, cloudflareAccountID string) (*CloudflareClient, error) {
@@ -32,6 +37,8 @@ func NewCloudflareClient(apiKey string, apiEmail string, cloudflareTunnelID stri
 }
 
 func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, serviceURL string) error {
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
 
 	existingConfig, err := c.GetTunnelConfig(ctx)
 	if err != nil {
@@ -107,6 +114,23 @@ func (c *CloudflareClient) GetTunnelConfig(ctx context.Context) (*zero_trust.Tun
 }
 
 func (c *CloudflareClient) CreateTunnelDNSRecord(ctx context.Context, zoneID string, hostname string) error {
+	// Idempotent: skip creation if a CNAME for this hostname already exists, so a
+	// re-created service does not produce duplicate records (which would later
+	// break lookups in GetTunnelDNSRecord).
+	existing, err := c.client.DNS.Records.List(ctx, dns.RecordListParams{
+		ZoneID: cloudflare.F(zoneID),
+		Name: cloudflare.F(dns.RecordListParamsName{
+			Exact: cloudflare.F(hostname),
+		}),
+		Type: cloudflare.F(dns.RecordListParamsType(dns.CNAMERecordTypeCNAME)),
+	})
+	if err != nil {
+		return fmt.Errorf("checking for existing DNS record %q: %w", hostname, err)
+	}
+	if len(existing.Result) > 0 {
+		return nil
+	}
+
 	recordParam := dns.CNAMERecordParam{
 		Name:    cloudflare.F(hostname),
 		Content: cloudflare.F(c.cloudflareTunnelID + ".cfargotunnel.com"),
@@ -120,7 +144,7 @@ func (c *CloudflareClient) CreateTunnelDNSRecord(ctx context.Context, zoneID str
 		Record: recordParam,
 	}
 
-	_, err := c.client.DNS.Records.New(ctx, params)
+	_, err = c.client.DNS.Records.New(ctx, params)
 	return err
 }
 

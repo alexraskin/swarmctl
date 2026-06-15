@@ -34,6 +34,16 @@ func NewSyncer(client API) *Syncer {
 	return &Syncer{client: client}
 }
 
+// InvalidateHost drops a hostname from the in-memory cache. The removal
+// reconciler calls this after deleting a hostname's tunnel ingress (and
+// possibly its DNS record) so a later recreate of the same service is treated
+// as new and re-provisions DNS instead of being skipped as already-present.
+func (s *Syncer) InvalidateHost(hostname string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.cache, hostname)
+}
+
 func (s *Syncer) LoadExisting(ctx context.Context) (map[string]existingConfig, error) {
 	resp, err := s.client.GetTunnelConfig(ctx)
 	if err != nil {

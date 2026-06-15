@@ -12,12 +12,47 @@ import (
 	"github.com/alexraskin/swarmctl/internal/metrics"
 	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/swarm"
 )
 
 const (
 	cooldown = 1 * time.Minute
-	maxAge   = 1 * time.Hour
+
+	syncMaxRetries = 5
+	syncBaseDelay  = 5 * time.Second
 )
+
+// syncServiceWithRetry pushes a service's tunnel config to Cloudflare, retrying
+// with exponential backoff. Runs in its own goroutine; never blocks the event
+// loop. Aborts on context cancellation.
+func (s *Server) syncServiceWithRetry(svc *swarm.Service, name string) {
+	delay := syncBaseDelay
+	for attempt := 1; attempt <= syncMaxRetries; attempt++ {
+		start := time.Now()
+		err := s.cfSyncer.SyncService(s.ctx, svc)
+		duration := time.Since(start).Seconds()
+
+		if err == nil {
+			metrics.RecordCloudflareSync("success", duration)
+			s.logger.Debug("Cloudflare sync succeeded", slog.String("service", name))
+			return
+		}
+
+		metrics.RecordCloudflareSync("error", duration)
+		s.logger.Error("Cloudflare sync failed", slog.String("service", name), slog.Int("attempt", attempt), "error", err)
+
+		if attempt == syncMaxRetries {
+			return
+		}
+
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(delay):
+			delay *= 2
+		}
+	}
+}
 
 // extractHostnames extracts all hostnames from service labels
 func (s *Server) extractHostnames(labels map[string]string) []string {
@@ -107,17 +142,9 @@ func (s *Server) monitorServiceEvents() error {
 					s.serviceHostnames.Store(name, hostnames)
 				}
 
-				start := time.Now()
-				if err := s.cfSyncer.SyncService(s.ctx, svc); err != nil {
-					duration := time.Since(start).Seconds()
-					metrics.RecordCloudflareSync("error", duration)
-					s.logger.Error("Cloudflare sync failed", slog.String("service", name), "error", err)
-					time.Sleep(5 * time.Second)
-					continue
-				}
-				duration := time.Since(start).Seconds()
-				metrics.RecordCloudflareSync("success", duration)
-				s.logger.Debug("Cloudflare sync succeeded", slog.String("service", name))
+				// Sync off the event loop so a slow/failing Cloudflare call does
+				// not stall processing of other service events.
+				go s.syncServiceWithRetry(svc, name)
 			}
 		}
 	}
@@ -146,7 +173,10 @@ func (s *Server) dockerEventsMonitor() error {
 				}
 				time.Sleep(5 * time.Second)
 			case msg := <-msgs:
-				containerID := msg.Actor.ID[:12]
+				containerID := msg.Actor.ID
+				if len(containerID) > 12 {
+					containerID = containerID[:12]
+				}
 				status := msg.Action
 				name := msg.Actor.Attributes["name"]
 				exitCode := msg.Actor.Attributes["exitCode"]
@@ -363,6 +393,10 @@ func (s *Server) reconcileTunnelConfig() error {
 			s.logger.Error("Failed to remove tunnel config", "error", err, slog.String("hostname", hostname))
 			continue
 		}
+
+		// Drop from the syncer cache so a future recreate re-provisions instead
+		// of being treated as already-present (it may also lose its DNS below).
+		s.cfSyncer.InvalidateHost(hostname)
 
 		// Optionally delete DNS record
 		if s.config.DeleteDNSOnRemoval {

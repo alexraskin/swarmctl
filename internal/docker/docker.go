@@ -54,10 +54,16 @@ func (d *DockerClient) UpdateDockerService(serviceName string, image string, ctx
 	if err != nil {
 		return nil, fmt.Errorf("failed to update service: %v", err)
 	}
+
+	updated, err := d.GetDockerService(serviceName, ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get updated service: %v", err)
+	}
+
 	return &DockerUpdateResponse{
 		Success:    true,
 		OldVersion: oldVersion,
-		NewVersion: service.Version.Index,
+		NewVersion: updated.Version.Index,
 	}, nil
 }
 

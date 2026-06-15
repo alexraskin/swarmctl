@@ -9,13 +9,18 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=devel
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg \
     CGO_ENABLED=0 \
     GOOS=$TARGETOS \
     GOARCH=$TARGETARCH \
-    go build -o swarmctl github.com/alexraskin/swarmctl
+    go build \
+    -ldflags "-X github.com/alexraskin/swarmctl/internal/ver.version=${VERSION} -X github.com/alexraskin/swarmctl/internal/ver.commit=${COMMIT} -X github.com/alexraskin/swarmctl/internal/ver.buildTime=${BUILD_TIME}" \
+    -o swarmctl github.com/alexraskin/swarmctl
 
 FROM alpine
 

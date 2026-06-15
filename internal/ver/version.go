@@ -7,39 +7,54 @@ import (
 	"time"
 )
 
+// These are overridden at build time via -ldflags "-X". When unset (e.g. local
+// `go run`), Load falls back to the module's embedded build info.
+var (
+	version   = ""
+	commit    = ""
+	buildTime = ""
+)
+
 func Load() Version {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return Version{
-			Version:   "devel",
-			GoVersion: runtime.Version(),
-			Revision:  "unknown",
-		}
-	}
-
-	var (
-		revision  = "unknown"
-		buildTime = "unknown"
-		dirty     bool
-	)
-	for _, setting := range info.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			revision = setting.Value
-		case "build.timestamp":
-			buildTime = setting.Value
-		case "vcs.dirty":
-			dirty = setting.Value == "true"
-		}
-	}
-
-	return Version{
-		Version:   info.Main.Version,
-		GoVersion: info.GoVersion,
-		Revision:  revision,
+	v := Version{
+		Version:   version,
+		GoVersion: runtime.Version(),
+		Revision:  commit,
 		BuildTime: buildTime,
-		Dirty:     dirty,
 	}
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		v.GoVersion = info.GoVersion
+		if v.Version == "" {
+			v.Version = info.Main.Version
+		}
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				if v.Revision == "" {
+					v.Revision = setting.Value
+				}
+			case "build.timestamp":
+				if v.BuildTime == "" {
+					v.BuildTime = setting.Value
+				}
+			case "vcs.dirty":
+				v.Dirty = setting.Value == "true"
+			}
+		}
+	}
+
+	if v.Version == "" {
+		v.Version = "devel"
+	}
+	if v.Revision == "" {
+		v.Revision = "unknown"
+	}
+	if v.BuildTime == "" {
+		v.BuildTime = "unknown"
+	}
+
+	return v
 }
 
 type Version struct {
