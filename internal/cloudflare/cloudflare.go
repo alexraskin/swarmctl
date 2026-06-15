@@ -3,7 +3,6 @@ package cloudflare
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/cloudflare/cloudflare-go/v4"
@@ -55,20 +54,17 @@ func (c *CloudflareClient) UpdateTunnelConfig(ctx context.Context, hostname, ser
 		})
 	}
 
-	// Add all existing entries except:
+	// Preserve all existing entries except:
 	// - The 404 catch-all (we'll add it at the end)
-	// - The hostname we're updating/removing
-	// - Comma-separated hostnames
+	// - The hostname we're updating/removing (re-added above if serviceURL set)
+	// Any other entry, including externally-managed comma-joined hostnames, is
+	// carried through untouched.
 	for _, ingress := range existingConfig.Config.Ingress {
 		if ingress.Service == "http_status:404" {
 			continue
 		}
 
 		if ingress.Hostname == hostname {
-			continue
-		}
-
-		if strings.Contains(ingress.Hostname, ",") {
 			continue
 		}
 
