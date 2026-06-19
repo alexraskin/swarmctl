@@ -23,24 +23,31 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/ping"))
-	r.Use(middle.AuthMiddleware(s.config.AuthToken))
 	r.Use(metrics.MetricsMiddleware)
 
-	r.Use(httprate.Limit(
-		10,
-		time.Minute,
-		httprate.WithLimitHandler(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				metrics.IncrementRateLimitedRequests()
-				http.Error(w, "Too many requests", http.StatusTooManyRequests)
-			}),
-		),
-	))
-
+	// Public: scrape + version endpoints. The metrics endpoint must NOT be
+	// behind auth or the rate limiter — otherwise Prometheus scrape traffic
+	// fails auth (inflating swarmctl_auth_failures_total) and burns the
+	// per-IP rate-limit budget (inflating rate_limited + dropping scrapes).
 	r.Get("/version", s.serverVersion)
 	r.Get("/metrics", s.metricsHandler)
 
+	// Protected: deploy endpoint. Auth + rate limit apply here only.
 	r.Group(func(r chi.Router) {
+		// Metrics must wrap auth and rate-limit so rejected (401/429) requests
+		// are still counted in swarmctl_http_requests_total.
+		r.Use(middle.AuthMiddleware(s.config.AuthToken))
+		r.Use(httprate.Limit(
+			10,
+			time.Minute,
+			httprate.WithLimitHandler(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					metrics.IncrementRateLimitedRequests()
+					http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				}),
+			),
+		))
+
 		r.Route("/v1", func(r chi.Router) {
 			r.Post("/update/{serviceName}", s.updateService)
 		})

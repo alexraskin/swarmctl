@@ -12,13 +12,22 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		ActiveConnections.Inc()
+		defer ActiveConnections.Dec()
+
 		ww := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 		next.ServeHTTP(ww, r)
 
-		duration := time.Since(start).Seconds()
-
 		routePattern := getRoutePattern(r)
+
+		// Don't record the metrics scrape itself; it would dominate the
+		// HTTP request rate with Prometheus poll traffic.
+		if routePattern == "/metrics" {
+			return
+		}
+
+		duration := time.Since(start).Seconds()
 
 		HTTPRequestsTotal.WithLabelValues(
 			r.Method,
@@ -50,9 +59,7 @@ func getRoutePattern(r *http.Request) string {
 		}
 	}
 
-	path := r.URL.Path
-	if path == "" {
-		path = "/"
-	}
-	return path
+	// No matched route (404s, scanner traffic). Use a fixed label instead of
+	// the raw path to avoid unbounded label cardinality in Prometheus.
+	return "unmatched"
 }
