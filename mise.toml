@@ -1,0 +1,72 @@
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64", "macos-arm64"]
+
+[tools]
+go = "1.24"
+
+[env]
+CGO_ENABLED = "0"
+BINARY = "swarmctl"
+GOFLAGS = "-trimpath"
+LDFLAGS_PKG = "github.com/alexraskin/swarmctl/internal/ver"
+
+[tasks.build]
+description = "Static CGO-free binary -> ./swarmctl"
+run = '''
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+go build $GOFLAGS -ldflags "-s -w -X $LDFLAGS_PKG.version=$VERSION -X $LDFLAGS_PKG.commit=$COMMIT -X $LDFLAGS_PKG.buildTime=$BUILD_TIME" -o "$BINARY" .
+'''
+
+[tasks.run]
+description = "Run locally on :8080 with debug logging (needs Docker socket + .env)"
+run = "go run . -port 8080 -debug"
+
+[tasks.test]
+description = "go test ./..."
+run = "go test ./..."
+
+[tasks.test-race]
+description = "go test -race ./... (needs cgo + C compiler)"
+env = { CGO_ENABLED = "1" }
+run = "go test -race ./..."
+
+[tasks.vet]
+description = "go vet ./..."
+run = "go vet ./..."
+
+[tasks.fmt]
+description = "gofmt -w ."
+run = "gofmt -w ."
+
+[tasks.lint]
+description = "Fail if gofmt needed"
+run = '''
+test -z "$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
+'''
+
+[tasks.check]
+description = "lint + vet + test — run before committing"
+depends = ["lint", "vet", "test"]
+
+[tasks.clean]
+description = "Remove binary and go build cache"
+run = '''
+rm -f "$BINARY"
+go clean
+'''
+
+[tasks.docker]
+description = "Build container image (same build-args as CI)"
+run = '''
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+docker build \
+  --build-arg VERSION="$VERSION" \
+  --build-arg COMMIT="$COMMIT" \
+  --build-arg BUILD_TIME="$BUILD_TIME" \
+  -t "$BINARY:$VERSION" -t "$BINARY:latest" .
+'''

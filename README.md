@@ -70,3 +70,17 @@ docker stack deploy -c docker-compose.yml your-stack
 ```
 http://swarmctl.your-domain.com/metrics
 ```
+
+## Development
+
+Tasks and the Go toolchain are managed with [mise](https://mise.jdx.dev):
+
+```bash
+mise trust && mise install   # once per clone
+mise run build               # static binary -> ./swarmctl
+mise run run                 # run locally on :8080 with debug logging
+mise run check               # lint + vet + test — run before opening a PR
+mise run docker              # build the container image
+```
+
+`mise tasks` lists everything. CI runs the same tasks.

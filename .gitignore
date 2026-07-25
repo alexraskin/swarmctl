@@ -2,3 +2,4 @@
 *.txt
 tunnel.env
 docker-compose.*.yml
+/swarmctl

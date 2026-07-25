@@ -11,14 +11,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
+Tasks live in `mise.toml` (`mise trust` once per clone; `mise install` pins Go).
+
 ```bash
-go build ./...                              # build
-go run . -port 8080 -debug                  # run locally (needs Docker socket + .env)
-go vet ./...                                # vet
-go test ./...                               # tests (note: no test files exist yet)
-go test ./server -run TestName              # single test, once tests exist
-docker build -t swarmctl .                  # multi-arch build (matches CI)
+mise run build                              # static binary -> ./swarmctl, version ldflags baked in
+mise run run                                # go run . -port 8080 -debug (needs Docker socket + .env)
+mise run check                              # lint + vet + test — run before committing
+mise run test                               # go test ./...
+mise run test-race                          # go test -race ./... (CI runs this)
+mise run vet / fmt / lint / clean
+mise run docker                             # docker build with the same build-args as CI
+go test ./server -run TestName              # single test
 ```
+
+CI (`.github/workflows/ci.yaml`, `build.yaml`) installs the toolchain with `jdx/mise-action` and calls the same tasks, so local `mise run check` matches CI.
 
 Requires a `.env` file (copy `.env.example`) and access to the Docker socket. The binary refuses to start if any required env var is unset (`getSecretOrEnv` calls `os.Exit(-1)`).
 
