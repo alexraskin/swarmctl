@@ -2,6 +2,8 @@
 
 ![swarmctl](https://i.gyazo.com/41976189f3f92b5ccdacc914b4b73e37.png)
 
+**Docs: [swarmctl-docs.alexraskin.com](https://swarmctl-docs.alexraskin.com/)**
+
 Docker Swarm tool:
 - REST API for service updates
 - Automatic service discovery via Docker Tags
@@ -81,6 +83,7 @@ mise run build               # static binary -> ./swarmctl
 mise run run                 # run locally on :8080 with debug logging
 mise run check               # lint + vet + test — run before opening a PR
 mise run docker              # build the container image
+mise run docs-dev            # docs site at localhost:1313
 ```
 
 `mise tasks` lists everything. CI runs the same tasks.

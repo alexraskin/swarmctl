@@ -1,0 +1,59 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: &docs
+      - "docs/**"
+      - "mise.toml"
+      - "mise.lock"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths: *docs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a deploy half-way; queue instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # enableGitInfo needs the history for "last updated"
+
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+          cache: true
+
+      - name: configure pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: build
+        run: mise run docs-build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/public
+
+  deploy:
+    # Pull requests build to catch breakage but must not publish.
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

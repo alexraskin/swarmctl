@@ -21,6 +21,7 @@ mise run test                               # go test ./...
 mise run test-race                          # go test -race ./... (CI runs this)
 mise run vet / fmt / lint / clean
 mise run docker                             # docker build with the same build-args as CI
+mise run docs-dev / docs-build              # Hugo docs site (localhost:1313 / docs/public)
 go test ./server -run TestName              # single test
 ```
 
@@ -30,16 +31,15 @@ Requires a `.env` file (copy `.env.example`) and access to the Docker socket. Th
 
 ## Architecture
 
-`main.go` wires everything: loads config, builds the Docker / Cloudflare / Pushover clients + the Cloudflare `Syncer`, constructs the `Server`, and runs it. `Server.Start()` (`server/server.go`) launches the HTTP listener **and three background goroutines** — these run for the life of the process:
+`main.go` wires everything: loads config, builds the Docker / Cloudflare / Pushover clients + the Cloudflare `Syncer`, constructs the `Server`, and runs it. `Server.Start()` (`server/server.go`) launches the HTTP listener **and five background workers** via `startWorkers()`; all share the server context, and `Shutdown` cancels it and waits on the WaitGroup:
 
-- `startDockerMonitor` (`server/service.go`) — fans out to three Docker event watchers:
-  - `monitorServiceEvents`: on service create/update, if labeled `cloudflared.tunnel.enabled=true`, caches hostnames in `serviceHostnames` and calls `cfSyncer.SyncService`.
-  - `dockerEventsMonitor`: on container die/restart/crash, sends a Pushover notification. Deduped via `recentEvents` sync.Map with a 1-minute cooldown.
-  - `monitorServiceRemovals`: on service remove, records a `pendingRemoval` (only for previously-tunnel-enabled services).
-- `startEventCleanup` — periodically evicts stale entries from `recentEvents`.
-- `startRemovalProcessor` — every minute, promotes `pendingRemovals` older than `ServiceRemovalDelayMinutes` into a `reconcileTunnelConfig()` pass that diffs running services against the live tunnel config and removes orphaned ingress entries (and optionally DNS records, if `DELETE_DNS_ON_REMOVAL=true`).
+- `service-events` (`monitorServiceEvents`, `server/service.go`) — on service create/update, if labeled `cloudflared.tunnel.enabled=true`, caches hostnames in `serviceHostnames` and runs `syncServiceWithRetry` in its own goroutine (5 attempts, 5s doubling backoff).
+- `service-removals` (`monitorServiceRemovals`) — on service remove, records a `pendingRemoval` (only for previously-tunnel-enabled services).
+- `container-events` (`monitorContainerEvents`) — on container die/restart/crash, sends a Pushover notification. Deduped via `recentEvents` sync.Map with a 1-minute cooldown.
+- `event-cleanup` (`runEventCleanup(5m, 10m)`) — evicts `recentEvents` entries older than 10 minutes.
+- `removal-processor` (`startRemovalProcessor`) — every minute, promotes `pendingRemovals` older than `ServiceRemovalDelayMinutes` into a `reconcileTunnelConfig()` pass that diffs running services against the live tunnel config and removes orphaned ingress entries, Access apps, syncer cache entries (and optionally DNS records, if `DELETE_DNS_ON_REMOVAL=true`).
 
-Each event watcher self-reconnects by relaunching its own goroutine when the Docker error channel closes — be careful not to introduce duplicate watchers when editing them.
+All three watchers share `consumeDockerEvents`, which re-subscribes **in place** after a 5s delay when Docker closes the stream — do not reintroduce respawning goroutines, it multiplies watchers.
 
 ### Key boundaries
 
@@ -62,11 +62,15 @@ Services opt in with Docker labels — both `SyncService` and `extractHostnames`
 
 ## HTTP surface (`server/routes.go`)
 
-chi router. Global middleware: RequestID, RealIP, Logger, Recoverer, `/ping` heartbeat, **auth (applies to everything)**, metrics, and a 10-req/min rate limit. Routes: `GET /version`, `GET /metrics`, `POST /v1/update/{serviceName}`.
+chi router. Global middleware: RequestID, RealIP, Logger, Recoverer, `/ping` heartbeat, metrics. **Auth + the 10-req/min rate limit wrap the `/v1` group only** — `/ping`, `/version`, and `/metrics` are public on purpose (auth on `/metrics` would 401 every Prometheus scrape and burn the rate-limit budget). Routes: `GET /version`, `GET /metrics`, `POST /v1/update/{serviceName}`.
 
 ## Config (`server/config.go`)
 
 All config comes from env vars via `getSecretOrEnv`: if a value starts with `/` and the path exists, it's read as a **Docker secret file** (trimmed); otherwise treated as a literal. Note the env var is spelled `ENVIROMENT` (sic). Numeric/bool extras: `SERVICE_REMOVAL_DELAY_MINUTES` (default 30), `DELETE_DNS_ON_REMOVAL` (default false).
+
+## Docs (`docs/`)
+
+Hugo + Hextra site, content under `docs/content/docs`, published to GitHub Pages by `.github/workflows/docs.yml` on `main` pushes touching `docs/**` (custom domain in `docs/static/CNAME`). Pages: getting-started, labels, configuration, api, how-it-works, observability, troubleshooting, contributing. Keep them in sync when behavior changes — the label contract, env vars, endpoints, and metric names are all documented there verbatim.
 
 ## Deploy
 
