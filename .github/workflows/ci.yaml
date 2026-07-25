@@ -1,9 +1,19 @@
 name: ci
 on:
   pull_request:
+    paths: &code
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "mise.toml"
+      - "mise.lock"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/ci.yaml"
   push:
     branches-ignore:
       - "main"
+    paths: *code
 
 jobs:
   test:

@@ -1,8 +1,14 @@
 name: pipeline
 on:
- push:
-   branches:
-     - "main"
+  push:
+    branches:
+      - "main"
+    # Docs-only changes deploy through docs.yml; no need to rebuild and
+    # redeploy the daemon for them.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".github/workflows/docs.yml"
 
 permissions:
   packages: write

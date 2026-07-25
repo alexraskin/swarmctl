@@ -11,3 +11,17 @@ url = "https://dl.google.com/go/go1.24.13.linux-amd64.tar.gz"
 [tools.go."platforms.macos-arm64"]
 checksum = "sha256:f282d882c3353485e2fc6c634606d85caf36e855167d59b996dbeae19fa7629a"
 url = "https://dl.google.com/go/go1.24.13.darwin-arm64.tar.gz"
+
+[[tools.hugo-extended]]
+version = "0.164.0"
+backend = "aqua:gohugoio/hugo/hugo-extended"
+
+[tools.hugo-extended."platforms.linux-x64"]
+checksum = "sha256:fea17b8c076f950bb2e9f9486667bdaa29422883888d509d63931c73e8a9b3a4"
+url = "https://github.com/gohugoio/hugo/releases/download/v0.164.0/hugo_extended_0.164.0_linux-amd64.tar.gz"
+url_api = "https://api.github.com/repos/gohugoio/hugo/releases/assets/468320235"
+
+[tools.hugo-extended."platforms.macos-arm64"]
+checksum = "sha256:618491f40cbb36a9f55d4da761c55d89f79312130f926ff7f3e1dfa83ca15eb0"
+url = "https://github.com/gohugoio/hugo/releases/download/v0.164.0/hugo_extended_0.164.0_darwin-universal.pkg"
+url_api = "https://api.github.com/repos/gohugoio/hugo/releases/assets/468320276"

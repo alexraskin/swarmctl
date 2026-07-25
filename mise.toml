@@ -4,6 +4,8 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 
 [tools]
 go = "1.24"
+# The docs site needs the extended build (Hextra compiles SCSS).
+hugo-extended = "0.164.0"
 
 [env]
 CGO_ENABLED = "0"
@@ -57,6 +59,14 @@ run = '''
 rm -f "$BINARY"
 go clean
 '''
+
+[tasks.docs-dev]
+description = "Serve the docs site at localhost:1313"
+run = "hugo server -s docs --buildDrafts"
+
+[tasks.docs-build]
+description = "Build the docs site -> docs/public"
+run = "hugo -s docs --minify --gc"
 
 [tasks.docker]
 description = "Build container image (same build-args as CI)"
