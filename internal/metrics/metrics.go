@@ -92,10 +92,10 @@ var (
 		},
 	)
 
-	PushoverNotificationsTotal = promauto.NewCounterVec(
+	NotificationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "swarmctl_pushover_notifications_total",
-			Help: "Total number of Pushover notifications sent",
+			Name: "swarmctl_notifications_total",
+			Help: "Total number of notifications sent through shoutrrr",
 		},
 		[]string{"status"},
 	)
@@ -119,8 +119,8 @@ func RecordCloudflareSync(status string, duration float64) {
 	CloudflareSyncDuration.Observe(duration)
 }
 
-func RecordPushoverNotification(status string) {
-	PushoverNotificationsTotal.WithLabelValues(status).Inc()
+func RecordNotification(status string) {
+	NotificationsTotal.WithLabelValues(status).Inc()
 }
 
 func IncrementAuthFailures() {

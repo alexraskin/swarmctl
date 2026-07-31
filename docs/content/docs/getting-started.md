@@ -11,10 +11,12 @@ weight: 1
   `cloudflared` running somewhere in the cluster with that tunnel's token.
   swarmctl edits the tunnel's *ingress configuration*; it does not run the
   tunnel.
-- A Cloudflare **global API key** and the account email (not an API token — see
-  [Configuration](../configuration/)).
-- Pushover application key + recipient, and a Discord webhook URL. Both are
-  currently **required** at startup.
+- A Cloudflare **scoped API token** with tunnel, Access, DNS, and zone-read
+  permissions — see [Configuration](../configuration/#api-token-permissions) for
+  the exact four.
+- Optionally, one or more [shoutrrr](https://containrrr.dev/shoutrrr/) URLs for
+  container-event alerts. Leave `NOTIFICATION_URLS` unset and swarmctl runs fine
+  without alerting.
 
 ## Deploy it
 
@@ -29,25 +31,20 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      ENVIROMENT: production          # spelled this way in the code
+      ENVIRONMENT: production
       AUTH_TOKEN: /run/secrets/swarmctl_auth_token
-      CLOUDFLARE_API_KEY: /run/secrets/cloudflare_api_key
-      CLOUDFLARE_API_EMAIL: you@example.com
+      CLOUDFLARE_API_TOKEN: /run/secrets/cloudflare_api_token
       CLOUDFLARE_ACCOUNT_ID: /run/secrets/cloudflare_account_id
       CLOUDFLARE_TUNNEL_ID: /run/secrets/cloudflare_tunnel_id
-      PUSHOVER_API_KEY: /run/secrets/pushover_api_key
-      PUSHOVER_RECIPIENT: /run/secrets/pushover_recipient
-      WEBHOOK_URL: /run/secrets/discord_webhook_url
+      NOTIFICATION_URLS: /run/secrets/notification_urls
       SERVICE_REMOVAL_DELAY_MINUTES: "30"
       DELETE_DNS_ON_REMOVAL: "false"
     secrets:
       - swarmctl_auth_token
-      - cloudflare_api_key
+      - cloudflare_api_token
       - cloudflare_account_id
       - cloudflare_tunnel_id
-      - pushover_api_key
-      - pushover_recipient
-      - discord_webhook_url
+      - notification_urls
     deploy:
       placement:
         constraints:

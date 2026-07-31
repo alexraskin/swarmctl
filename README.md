@@ -8,9 +8,9 @@ Docker Swarm tool:
 - REST API for service updates
 - Automatic service discovery via Docker Tags
 - Cloudflare Tunnel integration with DNS management
-- Pushover notifications for service updates
+- Container event notifications via [shoutrrr](https://containrrr.dev/shoutrrr/) — Discord, Slack, Telegram, ntfy, Pushover, and everything else it supports
 - Prometheus metrics
-- Logging to Discord
+- Structured JSON logging to stdout
 
 1. Copy the `.env.example` file to `.env` and fill in the values.
 2. Deploy the swarmctl server to the swarm cluster. Example: [docker-compose.swarmctl.yml](https://github.com/alexraskin/infrastructure/blob/main/swarmctl/docker-compose.swarmctl.yml) file.
@@ -57,7 +57,7 @@ List your reusable policy IDs with:
 
 ```bash
 curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/policies" \
-  -H "X-Auth-Email: $CLOUDFLARE_API_EMAIL" -H "X-Auth-Key: $CLOUDFLARE_API_KEY" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   | jq '.result[] | {id, name, decision}'
 ```
 

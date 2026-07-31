@@ -3,27 +3,19 @@ package logger
 import (
 	"log/slog"
 	"os"
-
-	slogdiscord "github.com/betrayy/slog-discord"
 )
 
-func New(level slog.Level, webhookURL string, env string, serviceName string) (*slog.Logger, error) {
-	opts := []slogdiscord.Option{
-		slogdiscord.WithMinLevel(slog.LevelWarn),
-		slogdiscord.WithSyncMode(true),
-		slogdiscord.WithHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})),
-	}
+// New returns a JSON logger writing to stdout at level. Delivering logs
+// somewhere is the log collector's job, not swarmctl's; alerts go through
+// internal/notify instead.
+func New(level slog.Level, env string, serviceName string) *slog.Logger {
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 
-	discordHandler, err := slogdiscord.NewDiscordHandler(webhookURL, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	l := slog.New(discordHandler)
+	l := slog.New(handler)
 	l = l.With("env", env)
 	l = l.With("service", serviceName)
 
-	return l, nil
+	return l
 }
 
 func SetDefault(l *slog.Logger) { slog.SetDefault(l) }

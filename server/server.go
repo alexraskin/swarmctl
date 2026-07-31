@@ -11,7 +11,7 @@ import (
 
 	"github.com/alexraskin/swarmctl/internal/cloudflare"
 	"github.com/alexraskin/swarmctl/internal/docker"
-	"github.com/alexraskin/swarmctl/internal/pushover"
+	"github.com/alexraskin/swarmctl/internal/notify"
 	"github.com/alexraskin/swarmctl/internal/ver"
 )
 
@@ -29,7 +29,7 @@ type Server struct {
 	port             string
 	server           *http.Server
 	dockerClient     *docker.DockerClient
-	pushoverClient   *pushover.PushoverClient
+	notifier         *notify.Notifier
 	logger           *slog.Logger
 	recentEvents     sync.Map
 	cfClient         cloudflare.API
@@ -45,7 +45,7 @@ func NewServer(
 	config *Config,
 	port string,
 	dockerClient *docker.DockerClient,
-	pushoverClient *pushover.PushoverClient,
+	notifier *notify.Notifier,
 	logger *slog.Logger,
 	cfClient cloudflare.API,
 	cfSyncer *cloudflare.Syncer,
@@ -54,17 +54,17 @@ func NewServer(
 	ctx, cancel := context.WithCancel(ctx)
 
 	s := &Server{
-		ctx:            ctx,
-		cancel:         cancel,
-		version:        version,
-		config:         config,
-		port:           port,
-		dockerClient:   dockerClient,
-		pushoverClient: pushoverClient,
-		logger:         logger,
-		recentEvents:   sync.Map{},
-		cfClient:       cfClient,
-		cfSyncer:       cfSyncer,
+		ctx:          ctx,
+		cancel:       cancel,
+		version:      version,
+		config:       config,
+		port:         port,
+		dockerClient: dockerClient,
+		notifier:     notifier,
+		logger:       logger,
+		recentEvents: sync.Map{},
+		cfClient:     cfClient,
+		cfSyncer:     cfSyncer,
 	}
 
 	s.server = &http.Server{

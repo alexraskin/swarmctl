@@ -12,13 +12,10 @@ import (
 type Config struct {
 	AuthToken                  string
 	CloudflareTunnelID         string
-	CloudflareAPIKey           string
-	CloudflareAPIEmail         string
+	CloudflareAPIToken         string
 	CloudflareAccountID        string
-	PushoverAPIKey             string
-	PushoverRecipient          string
 	Environment                string
-	WebhookURL                 string
+	NotificationURLs           []string
 	ServiceRemovalDelayMinutes int
 	DeleteDNSOnRemoval         bool
 }
@@ -43,19 +40,56 @@ func LoadConfig() *Config {
 		deleteDNS = strings.ToLower(dnsStr) == "true"
 	}
 
+	// Notifications are optional: no URLs means no alerts, not a failed start.
+	notificationURLs := parseNotificationURLs(getOptionalSecretOrEnv("NOTIFICATION_URLS"))
+
 	return &Config{
 		AuthToken:                  getSecretOrEnv("AUTH_TOKEN"),
 		CloudflareTunnelID:         getSecretOrEnv("CLOUDFLARE_TUNNEL_ID"),
-		CloudflareAPIKey:           getSecretOrEnv("CLOUDFLARE_API_KEY"),
-		CloudflareAPIEmail:         getSecretOrEnv("CLOUDFLARE_API_EMAIL"),
+		CloudflareAPIToken:         getSecretOrEnv("CLOUDFLARE_API_TOKEN"),
 		CloudflareAccountID:        getSecretOrEnv("CLOUDFLARE_ACCOUNT_ID"),
-		PushoverAPIKey:             getSecretOrEnv("PUSHOVER_API_KEY"),
-		PushoverRecipient:          getSecretOrEnv("PUSHOVER_RECIPIENT"),
-		Environment:                getSecretOrEnv("ENVIROMENT"),
-		WebhookURL:                 getSecretOrEnv("WEBHOOK_URL"),
+		Environment:                getSecretOrEnv("ENVIRONMENT"),
+		NotificationURLs:           notificationURLs,
 		ServiceRemovalDelayMinutes: removalDelay,
 		DeleteDNSOnRemoval:         deleteDNS,
 	}
+}
+
+// parseNotificationURLs splits a shoutrrr URL list on commas and newlines, so a
+// Docker secret file can hold one URL per line and an env var can hold a
+// comma-separated list. Empty entries are dropped.
+func parseNotificationURLs(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+
+	urls := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			urls = append(urls, trimmed)
+		}
+	}
+	return urls
+}
+
+// getOptionalSecretOrEnv reads key with the same Docker-secret handling as
+// getSecretOrEnv, but returns "" for an unset value instead of exiting. Use it
+// for anything swarmctl can run without.
+func getOptionalSecretOrEnv(key string) string {
+	value := os.Getenv(key)
+
+	if strings.HasPrefix(value, "/") {
+		if _, err := os.Stat(value); err == nil {
+			data, err := os.ReadFile(value)
+			if err != nil {
+				slog.Error("Failed to read secret file", "key", key, "path", value, "error", err)
+				return ""
+			}
+			return strings.TrimSpace(string(data))
+		}
+	}
+
+	return value
 }
 
 func getSecretOrEnv(key string) string {

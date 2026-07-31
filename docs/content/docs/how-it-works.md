@@ -13,7 +13,7 @@ waits for every one to return.
 |---|---|---|
 | `service-events` | Docker `service create` / `update` | Syncs tunnel ingress, DNS, and Access apps for tunnel-enabled services. |
 | `service-removals` | Docker `service remove` | Records a pending removal, if the service was known to be tunnel-enabled. |
-| `container-events` | Docker container `die` / `restart` / `crash` | Sends a Pushover notification, deduped per container. |
+| `container-events` | Docker container `die` / `restart` / `crash` | Sends a shoutrrr notification, deduped per container. |
 | `event-cleanup` | a 5-minute ticker | Evicts container-event dedup entries older than 10 minutes. |
 | `removal-processor` | a 1-minute ticker | Promotes ripe pending removals into a reconciliation pass. |
 
@@ -27,13 +27,13 @@ multiply after a daemon restart.
 ```mermaid
 flowchart TD
   A[service create/update event] --> B[inspect service]
-  B --> C{cloudflared.tunnel.enabled<br>== "true"?}
+  B --> C{"cloudflared.tunnel.enabled<br>== &quot;true&quot;?"}
   C -- no --> Z[ignore]
   C -- yes --> D[cache hostnames<br>for later removal]
   D --> E[sync in its own goroutine<br>5 tries, 5s doubling backoff]
   E --> F{hostname in cache<br>with same target?}
   F -- yes --> H
-  F -- no --> G[PUT tunnel ingress:<br>host → http://service:port]
+  F -- no --> G["PUT tunnel ingress:<br>host → http://service:port"]
   G --> I{hostname was<br>unknown entirely?}
   I -- yes --> J[find zone by eTLD+1<br>create proxied CNAME]
   I -- no --> H
@@ -81,8 +81,10 @@ duplicates.
 
 ## Container events
 
-`die`, `restart`, and `crash` events become Pushover pushes containing the
-container name, short ID, and exit code. Each `containerID:action` pair is
+`die`, `restart`, and `crash` events become shoutrrr notifications containing
+the container name, short ID, and exit code, delivered to every URL in
+`NOTIFICATION_URLS` (nothing is sent when it is unset). Each
+`containerID:action` pair is
 remembered for a 1-minute cooldown, so a crash-looping container produces at
 most one push a minute rather than one per restart. The cleanup worker sweeps
 entries older than 10 minutes every 5 minutes, and the current map size is
@@ -138,6 +140,7 @@ catch-all. Set `DELETE_DNS_ON_REMOVAL=true` to delete the record too.
 
 ## Logging
 
-`slog` with a JSON handler on stdout at the configured level, wrapped in a
-Discord handler that mirrors `WARN` and above to `WEBHOOK_URL` synchronously.
-Every line carries `service=swarmctl` and `env=$ENVIROMENT`.
+`slog` with a JSON handler on stdout at the configured level, and nothing on top
+of it — collecting and routing logs is left to whatever already scrapes your
+containers. Every line carries `service=swarmctl` and `env=$ENVIRONMENT`.
+Alerting is separate, through `NOTIFICATION_URLS`.

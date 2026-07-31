@@ -1,0 +1,295 @@
+{{- /*
+  Click-to-zoom for Mermaid diagrams.
+
+  The theme's mermaid partial re-renders every diagram from scratch on a theme
+  toggle (it resets innerHTML and calls mermaid.init again), so nothing here may
+  hold a reference to a diagram element or bind a listener to one. Everything is
+  delegated off document instead.
+*/ -}}
+<style>
+  /* Only hint at zooming once mermaid has actually drawn the diagram; before
+     that the element still holds the raw source text. */
+  .mermaid[data-processed] {
+    position: relative;
+    cursor: zoom-in;
+  }
+
+  .mermaid[data-processed]::after {
+    content: "⤢";
+    position: absolute;
+    top: 0.35rem;
+    right: 0.5rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    padding: 0.25rem;
+    border-radius: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+    color: #374151;
+    background: rgba(255, 255, 255, 0.75);
+  }
+
+  .dark .mermaid[data-processed]::after {
+    color: #e5e7eb;
+    background: rgba(17, 24, 39, 0.75);
+  }
+
+  .mermaid[data-processed]:hover::after,
+  .mermaid[data-processed]:focus-visible::after {
+    opacity: 1;
+  }
+
+  .mmdz-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 0, 0, 0.7);
+    overscroll-behavior: contain;
+  }
+
+  .mmdz-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    color: #f9fafb;
+    font-size: 0.8rem;
+  }
+
+  .mmdz-hint {
+    margin-right: auto;
+    opacity: 0.75;
+  }
+
+  .mmdz-btn {
+    appearance: none;
+    border: 1px solid rgba(249, 250, 251, 0.35);
+    background: transparent;
+    color: inherit;
+    border-radius: 0.25rem;
+    padding: 0.15rem 0.5rem;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .mmdz-btn:hover {
+    background: rgba(249, 250, 251, 0.15);
+  }
+
+  /* The cloned SVG inherits the page's mermaid theme, which assumes the page
+     background. Without an opaque stage, light-theme diagrams are dark-on-dark. */
+  .mmdz-stage {
+    flex: 1;
+    margin: 0 0.75rem 0.75rem;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #ffffff;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .dark .mmdz-stage {
+    background: #111827;
+  }
+
+  .mmdz-stage.mmdz-dragging {
+    cursor: grabbing;
+  }
+
+  .mmdz-inner {
+    width: 100%;
+    height: 100%;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+
+  .mmdz-inner > svg {
+    width: 100%;
+    height: 100%;
+    max-width: none !important;
+    display: block;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mermaid[data-processed]::after {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    "use strict";
+
+    var MIN_SCALE = 0.2;
+    var MAX_SCALE = 12;
+
+    var overlay = null;
+    var stage = null;
+    var inner = null;
+    var lastFocus = null;
+
+    var scale = 1;
+    var tx = 0;
+    var ty = 0;
+    var dragging = false;
+    var startX = 0;
+    var startY = 0;
+
+    function applyTransform() {
+      inner.style.transform =
+        "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
+    }
+
+    function reset() {
+      scale = 1;
+      tx = 0;
+      ty = 0;
+      applyTransform();
+    }
+
+    function zoomAt(clientX, clientY, factor) {
+      var next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+      if (next === scale) return;
+
+      // Keep the point under the cursor fixed while scaling.
+      var rect = stage.getBoundingClientRect();
+      var px = clientX - rect.left;
+      var py = clientY - rect.top;
+      var ratio = next / scale;
+
+      tx = px - (px - tx) * ratio;
+      ty = py - (py - ty) * ratio;
+      scale = next;
+      applyTransform();
+    }
+
+    function build() {
+      overlay = document.createElement("div");
+      overlay.className = "mmdz-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", "Enlarged diagram");
+      overlay.innerHTML =
+        '<div class="mmdz-bar">' +
+        '<span class="mmdz-hint">Drag to pan &middot; scroll to zoom</span>' +
+        '<button type="button" class="mmdz-btn" data-mmdz="reset">Reset</button>' +
+        '<button type="button" class="mmdz-btn" data-mmdz="close">Close &times;</button>' +
+        "</div>" +
+        '<div class="mmdz-stage"><div class="mmdz-inner"></div></div>';
+
+      stage = overlay.querySelector(".mmdz-stage");
+      inner = overlay.querySelector(".mmdz-inner");
+
+      overlay.addEventListener("click", function (e) {
+        var action = e.target.getAttribute("data-mmdz");
+        if (action === "close" || e.target === overlay) close();
+        if (action === "reset") reset();
+      });
+
+      stage.addEventListener(
+        "wheel",
+        function (e) {
+          e.preventDefault();
+          zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+        },
+        { passive: false }
+      );
+
+      stage.addEventListener("pointerdown", function (e) {
+        dragging = true;
+        startX = e.clientX - tx;
+        startY = e.clientY - ty;
+        stage.classList.add("mmdz-dragging");
+        stage.setPointerCapture(e.pointerId);
+      });
+
+      stage.addEventListener("pointermove", function (e) {
+        if (!dragging) return;
+        tx = e.clientX - startX;
+        ty = e.clientY - startY;
+        applyTransform();
+      });
+
+      function endDrag() {
+        dragging = false;
+        stage.classList.remove("mmdz-dragging");
+      }
+      stage.addEventListener("pointerup", endDrag);
+      stage.addEventListener("pointercancel", endDrag);
+
+      stage.addEventListener("dblclick", reset);
+
+      document.body.appendChild(overlay);
+    }
+
+    function open(svg) {
+      if (!overlay) build();
+
+      inner.replaceChildren(svg.cloneNode(true));
+      reset();
+
+      lastFocus = document.activeElement;
+      overlay.style.display = "flex";
+      document.documentElement.style.overflow = "hidden";
+      overlay.querySelector('[data-mmdz="close"]').focus();
+    }
+
+    function close() {
+      if (!overlay) return;
+      overlay.style.display = "none";
+      inner.replaceChildren();
+      document.documentElement.style.overflow = "";
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    function diagramFrom(target) {
+      if (!target || !target.closest) return null;
+      if (target.closest(".mmdz-overlay")) return null;
+      var el = target.closest(".mermaid");
+      return el ? el.querySelector("svg") : null;
+    }
+
+    document.addEventListener("click", function (e) {
+      var svg = diagramFrom(e.target);
+      if (svg) open(svg);
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && overlay && overlay.style.display === "flex") {
+        close();
+        return;
+      }
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var svg = diagramFrom(e.target);
+      if (svg) {
+        e.preventDefault();
+        open(svg);
+      }
+    });
+
+    // Diagrams render asynchronously and are rebuilt on every theme toggle, so
+    // keep making them keyboard-reachable as they appear.
+    function markFocusable() {
+      document.querySelectorAll(".mermaid[data-processed]").forEach(function (el) {
+        if (el.hasAttribute("tabindex")) return;
+        el.setAttribute("tabindex", "0");
+        el.setAttribute("role", "button");
+        el.setAttribute("aria-label", "Enlarge diagram");
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      markFocusable();
+      new MutationObserver(markFocusable).observe(document.body, {
+        subtree: true,
+        childList: true,
+        attributeFilter: ["data-processed"],
+      });
+    });
+  })();
+</script>

@@ -31,11 +31,11 @@ Requires a `.env` file (copy `.env.example`) and access to the Docker socket. Th
 
 ## Architecture
 
-`main.go` wires everything: loads config, builds the Docker / Cloudflare / Pushover clients + the Cloudflare `Syncer`, constructs the `Server`, and runs it. `Server.Start()` (`server/server.go`) launches the HTTP listener **and five background workers** via `startWorkers()`; all share the server context, and `Shutdown` cancels it and waits on the WaitGroup:
+`main.go` wires everything: loads config, builds the Docker / Cloudflare clients + the shoutrrr `Notifier` + the Cloudflare `Syncer`, constructs the `Server`, and runs it. `Server.Start()` (`server/server.go`) launches the HTTP listener **and five background workers** via `startWorkers()`; all share the server context, and `Shutdown` cancels it and waits on the WaitGroup:
 
 - `service-events` (`monitorServiceEvents`, `server/service.go`) — on service create/update, if labeled `cloudflared.tunnel.enabled=true`, caches hostnames in `serviceHostnames` and runs `syncServiceWithRetry` in its own goroutine (5 attempts, 5s doubling backoff).
 - `service-removals` (`monitorServiceRemovals`) — on service remove, records a `pendingRemoval` (only for previously-tunnel-enabled services).
-- `container-events` (`monitorContainerEvents`) — on container die/restart/crash, sends a Pushover notification. Deduped via `recentEvents` sync.Map with a 1-minute cooldown.
+- `container-events` (`monitorContainerEvents`) — on container die/restart/crash, sends a notification through `internal/notify`. Deduped via `recentEvents` sync.Map with a 1-minute cooldown. Skipped entirely when no `NOTIFICATION_URLS` are configured.
 - `event-cleanup` (`runEventCleanup(5m, 10m)`) — evicts `recentEvents` entries older than 10 minutes.
 - `removal-processor` (`startRemovalProcessor`) — every minute, promotes `pendingRemovals` older than `ServiceRemovalDelayMinutes` into a `reconcileTunnelConfig()` pass that diffs running services against the live tunnel config and removes orphaned ingress entries, Access apps, syncer cache entries (and optionally DNS records, if `DELETE_DNS_ON_REMOVAL=true`).
 
@@ -44,11 +44,12 @@ All three watchers share `consumeDockerEvents`, which re-subscribes **in place**
 ### Key boundaries
 
 - `internal/docker` — thin wrapper over the Docker SDK. `UpdateDockerService` mutates only `ContainerSpec.Image` and re-submits the existing spec/version.
-- `internal/cloudflare` — `API` is an interface (`sync.go` / `cloudflare.go`); `Server.cfClient` holds the interface so it can be mocked. `Syncer` owns an in-memory `cache` of hostname→ingress, lazily loaded on first sync.
+- `internal/cloudflare` — `API` is an interface (`sync.go` / `cloudflare.go`); `Server.cfClient` holds the interface so it can be mocked. Auth is a **scoped API token** (`option.WithAPIToken`, Bearer), not the global key; the token needs Account: Cloudflare Tunnel: Edit, Account: Access: Apps and Policies: Edit, Zone: DNS: Edit, Zone: Zone: Read. `Syncer` owns an in-memory `cache` of hostname→ingress, lazily loaded on first sync.
 - `internal/metrics` — Prometheus collectors (`promauto`) + middleware; exposed at `/metrics`. Helper funcs (`RecordDockerServiceUpdate`, etc.) are called throughout, not the collectors directly.
 - `internal/middle` — bearer-token auth. Expects `Authorization: Bearer <token>`; compares `token[7:]` to `AUTH_TOKEN` with `subtle.ConstantTimeCompare`.
-- `internal/logger` — slog over a Discord webhook handler: JSON to stdout at the configured level, plus Discord delivery for `WARN`+.
-- `internal/pushover`, `internal/ver` — Pushover client; build-info version (populated from VCS build settings).
+- `internal/logger` — plain slog JSON handler to stdout at the configured level. No remote delivery; log shipping is the collector's job.
+- `internal/notify` — shoutrrr (`containrrr/shoutrrr`) fan-out. `New(urls)` with an empty list returns a **disabled** notifier whose `Send` is a no-op, so notifications are optional. Bad URLs fail at startup, not on first alert.
+- `internal/ver` — build-info version (populated from VCS build settings).
 
 ### Label contract (service discovery)
 
@@ -66,7 +67,7 @@ chi router. Global middleware: RequestID, RealIP, Logger, Recoverer, `/ping` hea
 
 ## Config (`server/config.go`)
 
-All config comes from env vars via `getSecretOrEnv`: if a value starts with `/` and the path exists, it's read as a **Docker secret file** (trimmed); otherwise treated as a literal. Note the env var is spelled `ENVIROMENT` (sic). Numeric/bool extras: `SERVICE_REMOVAL_DELAY_MINUTES` (default 30), `DELETE_DNS_ON_REMOVAL` (default false).
+All required config comes from env vars via `getSecretOrEnv`: if a value starts with `/` and the path exists, it's read as a **Docker secret file** (trimmed); otherwise treated as a literal. Empty → `os.Exit(-1)`, so never route a new optional var through it — use `getOptionalSecretOrEnv` (same secret-file handling, returns `""` instead of exiting). Optional extras: `NOTIFICATION_URLS` (comma/newline-separated shoutrrr URLs, unset = alerts off), `SERVICE_REMOVAL_DELAY_MINUTES` (default 30), `DELETE_DNS_ON_REMOVAL` (default false).
 
 ## Docs (`docs/`)
 

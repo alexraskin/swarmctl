@@ -6,17 +6,53 @@ weight: 7
 ## It exits immediately at startup
 
 ```json
-{"level":"ERROR","msg":"Environment variable is not set","key":"PUSHOVER_RECIPIENT"}
+{"level":"ERROR","msg":"Environment variable is not set","key":"CLOUDFLARE_TUNNEL_ID"}
 ```
 
-Every variable in [Configuration](../configuration/#required) is mandatory —
-including the Pushover and Discord ones, even if you do not want either. The
+Every variable in [Configuration](../configuration/#required) is mandatory. The
 process exits with `-1` on the first missing one. In Swarm this looks like a
 task that restarts forever with no listener; check `docker service logs`.
+Everything under [Optional](../configuration/#optional) — including
+`NOTIFICATION_URLS` — can be left unset.
 
 If a value points at a Docker secret, remember that only a path that **exists**
 is read as a file. A typo'd path is used as a literal string, and you find out
 later when Cloudflare rejects the credential.
+
+A bad `NOTIFICATION_URLS` entry exits at startup too, with
+`failed to create notifier`. The message names the offending URL scheme; check
+it against the [shoutrrr service list](https://containrrr.dev/shoutrrr/v0.8/services/overview/).
+
+{{< callout type="warning" >}}
+**Upgrading from an older swarmctl?** Several variables changed:
+
+| Old | New |
+|---|---|
+| `ENVIROMENT` | `ENVIRONMENT` |
+| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_API_EMAIL` | `CLOUDFLARE_API_TOKEN` (scoped) |
+| `PUSHOVER_API_KEY`, `PUSHOVER_RECIPIENT`, `WEBHOOK_URL` | `NOTIFICATION_URLS` (optional) |
+
+The first two bite at startup: the old names are no longer read, so a stack that
+still sets them exits `-1` before the listener starts. Update every variable in
+the same deploy that pulls the new image. Mint the API token *before* deploying —
+[the four permissions](../configuration/#api-token-permissions) are not the
+default set on a template token.
+{{< /callout >}}
+
+## I get no alerts
+
+```json
+{"level":"WARN","msg":"NOTIFICATION_URLS is unset, container event alerts are disabled"}
+```
+
+That line at startup means exactly what it says. If it is *not* there, alerting
+is configured and the problem is delivery — watch
+`swarmctl_notifications_total{status="error"}` and the `Error sending
+notification` log lines, which carry whatever the destination returned.
+
+Note that alerts fire on container `die` / `restart` / `crash` only, deduped per
+`containerID:action` for one minute. Service updates and Cloudflare syncs do not
+notify.
 
 ## A service has labels but nothing happens
 
@@ -90,9 +126,13 @@ you exceeded 10 requests/minute from that IP.
 
 Each failing sync is retried 5 times (5s, 10s, 20s, 40s) and then abandoned
 until the next event for that service. Check `swarmctl_cloudflare_sync_total{status="error"}`
-and the error text: `9109` style codes mean the global key/email pair is wrong,
-and a 404 on the configuration endpoint usually means `CLOUDFLARE_TUNNEL_ID`
-belongs to a different account than `CLOUDFLARE_ACCOUNT_ID`.
+and the error text. A `401`/`403` means `CLOUDFLARE_API_TOKEN` is wrong, expired,
+or missing one of the [four permissions](../configuration/#api-token-permissions)
+— an under-scoped token fails only on the calls it lacks, so DNS working while
+Access apps 403 is the normal shape of that mistake. A 404 on the configuration
+endpoint usually means `CLOUDFLARE_TUNNEL_ID` belongs to a different account
+than `CLOUDFLARE_ACCOUNT_ID`, or the token's account resource does not include
+it.
 
 ## Metrics look wrong
 

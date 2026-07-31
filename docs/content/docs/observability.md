@@ -17,7 +17,7 @@ auth or the rate limiter (see [HTTP API](../api/)).
 | `swarmctl_docker_events_total` | counter | `event_type`, `service_name` |
 | `swarmctl_cloudflare_sync_total` | counter | `status` (`success`/`error`) |
 | `swarmctl_cloudflare_sync_duration_seconds` | histogram | — |
-| `swarmctl_pushover_notifications_total` | counter | `status` |
+| `swarmctl_notifications_total` | counter | `status` |
 | `swarmctl_auth_failures_total` | counter | — |
 | `swarmctl_rate_limited_requests_total` | counter | — |
 | `swarmctl_active_connections` | gauge | — |
@@ -67,11 +67,15 @@ it looks like is at `grafana/dashboard/example.png`.
 
 ## Alerts to your phone
 
-Container `die` / `restart` / `crash` events go out as Pushover notifications to
-`PUSHOVER_RECIPIENT`, titled `DOCKER SWARM EVENT`, with the container name,
-short ID, and exit code. Delivery outcomes are counted in
-`swarmctl_pushover_notifications_total{status}` — a rising `error` count means
-the app key or recipient is wrong, and you are silently missing pushes.
+Container `die` / `restart` / `crash` events go out through
+[shoutrrr](https://containrrr.dev/shoutrrr/) to every URL in
+`NOTIFICATION_URLS`, titled `DOCKER SWARM EVENT`, with the container name, short
+ID, and exit code. Delivery outcomes are counted in
+`swarmctl_notifications_total{status}` — a rising `error` count means a
+destination is rejecting the message, and you are silently missing alerts.
+
+With `NOTIFICATION_URLS` unset there is nothing to alert to: the counter stays
+at zero and swarmctl logs one warning at startup.
 
 Deduplication is per `containerID:action` with a one-minute cooldown, so a crash
 loop is one push a minute. A container that is *replaced* on every restart (the
@@ -79,9 +83,9 @@ normal Swarm behaviour) has a new ID each time, so those are not deduplicated.
 
 ## Logs
 
-Structured JSON on stdout (`docker service logs swarmctl_server`), plus a
-Discord mirror of everything at `WARN` and above via `WEBHOOK_URL`. Every line
-carries `env` and `service=swarmctl`; HTTP handler lines also carry
+Structured JSON on stdout (`docker service logs swarmctl_server`) and nothing
+else — shipping logs somewhere is your log collector's job, not swarmctl's.
+Every line carries `env` and `service=swarmctl`; HTTP handler lines also carry
 `requestID`, which chi generates per request.
 
 Run with `-debug` to see the reconciler's decisions — sync attempts, ignored
