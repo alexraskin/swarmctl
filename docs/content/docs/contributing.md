@@ -41,8 +41,8 @@ a green `mise run check` locally means a green CI.
 | `internal/cloudflare` | `API` interface + real client, and the `Syncer` that owns the hostname cache. |
 | `internal/metrics` | Prometheus collectors and the HTTP middleware. |
 | `internal/middle` | Bearer-token auth middleware. |
-| `internal/logger` | slog JSON handler wrapped in a Discord webhook handler. |
-| `internal/pushover` | Pushover notification client. |
+| `internal/logger` | slog JSON handler on stdout. |
+| `internal/notify` | shoutrrr fan-out notifier; disabled when no URLs are set. |
 | `internal/ver` | Build-time version info. |
 
 `cloudflare.API` is an interface precisely so the server and syncer can be

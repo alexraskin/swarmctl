@@ -46,11 +46,11 @@ layout: hextra-home
   >}}
   {{< hextra/feature-card
     title="Tells you when things die"
-    subtitle="Container die/restart/crash events become Pushover pushes, deduped per container so a crash loop is one notification a minute, not fifty."
+    subtitle="Container die/restart/crash events go out through shoutrrr to Discord, Slack, ntfy, Pushover or wherever else, deduped per container so a crash loop is one notification a minute, not fifty."
   >}}
   {{< hextra/feature-card
-    title="Prometheus and Discord"
-    subtitle="A /metrics endpoint outside auth for scraping, a Grafana dashboard in the repo, and WARN+ logs mirrored to a Discord webhook."
+    title="Prometheus built in"
+    subtitle="A /metrics endpoint outside auth for scraping, a Grafana dashboard in the repo, and structured JSON logs on stdout."
   >}}
 {{< /hextra/feature-grid >}}
 

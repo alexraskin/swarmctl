@@ -24,10 +24,13 @@ type CloudflareClient struct {
 	configMu sync.Mutex
 }
 
-func NewCloudflareClient(apiKey string, apiEmail string, cloudflareTunnelID string, cloudflareAccountID string) (*CloudflareClient, error) {
+// NewCloudflareClient authenticates with a scoped API token (Bearer), not the
+// account-wide global key. The token needs Account: Cloudflare Tunnel: Edit,
+// Account: Access: Apps and Policies: Edit, Zone: DNS: Edit, and Zone: Zone:
+// Read.
+func NewCloudflareClient(apiToken string, cloudflareTunnelID string, cloudflareAccountID string) (*CloudflareClient, error) {
 	client := cloudflare.NewClient(
-		option.WithAPIKey(apiKey),
-		option.WithAPIEmail(apiEmail),
+		option.WithAPIToken(apiToken),
 	)
 	return &CloudflareClient{
 		client:              client,

@@ -82,7 +82,7 @@ List your policy IDs:
 
 ```bash
 curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/policies" \
-  -H "X-Auth-Email: $CLOUDFLARE_API_EMAIL" -H "X-Auth-Key: $CLOUDFLARE_API_KEY" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   | jq '.result[] | {id, name, decision}'
 ```
 

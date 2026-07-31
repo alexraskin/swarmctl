@@ -12,7 +12,7 @@ import (
 	"github.com/alexraskin/swarmctl/internal/cloudflare"
 	"github.com/alexraskin/swarmctl/internal/docker"
 	"github.com/alexraskin/swarmctl/internal/logger"
-	"github.com/alexraskin/swarmctl/internal/pushover"
+	"github.com/alexraskin/swarmctl/internal/notify"
 	"github.com/alexraskin/swarmctl/internal/ver"
 	"github.com/alexraskin/swarmctl/server"
 )
@@ -31,10 +31,7 @@ func main() {
 		logLevel = slog.LevelDebug
 	}
 
-	logger, err := logger.New(logLevel, config.WebhookURL, config.Environment, "swarmctl")
-	if err != nil {
-		panic(err)
-	}
+	logger := logger.New(logLevel, config.Environment, "swarmctl")
 
 	dockerClient, err := docker.NewDockerClient()
 	if err != nil {
@@ -42,7 +39,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	cloudflareClient, err := cloudflare.NewCloudflareClient(config.CloudflareAPIKey, config.CloudflareAPIEmail, config.CloudflareTunnelID, config.CloudflareAccountID)
+	cloudflareClient, err := cloudflare.NewCloudflareClient(config.CloudflareAPIToken, config.CloudflareTunnelID, config.CloudflareAccountID)
 	if err != nil {
 		logger.Error("failed to create cloudflare client", "error", err)
 		os.Exit(-1)
@@ -50,7 +47,14 @@ func main() {
 
 	cfSyncer := cloudflare.NewSyncer(cloudflareClient)
 
-	pushoverClient := pushover.NewPushoverClient(config.PushoverAPIKey)
+	notifier, err := notify.New(config.NotificationURLs)
+	if err != nil {
+		logger.Error("failed to create notifier", "error", err)
+		os.Exit(-1)
+	}
+	if !notifier.Enabled() {
+		logger.Warn("NOTIFICATION_URLS is unset, container event alerts are disabled")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -61,7 +65,7 @@ func main() {
 		config,
 		*port,
 		dockerClient,
-		pushoverClient,
+		notifier,
 		logger,
 		cloudflareClient,
 		cfSyncer,

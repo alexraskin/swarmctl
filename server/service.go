@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/alexraskin/swarmctl/internal/metrics"
-	"github.com/alexraskin/swarmctl/internal/pushover"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
@@ -177,18 +176,15 @@ func (s *Server) handleContainerEvent(msg events.Message) {
 	}
 	s.recentEvents.Store(eventKey, now)
 
-	pushoverMsg := pushover.PushoverMessage{
-		Title:     "DOCKER SWARM EVENT",
-		Message:   fmt.Sprintf("Container has died or restarted: %s (%s) with exit code %s", name, containerID, exitCode),
-		Timestamp: time.Unix(msg.Time, 0).Unix(),
-		Recipient: s.config.PushoverRecipient,
-	}
+	if s.notifier.Enabled() {
+		body := fmt.Sprintf("Container has died or restarted: %s (%s) with exit code %s", name, containerID, exitCode)
 
-	if err := s.pushoverClient.SendNotification(pushoverMsg); err != nil {
-		metrics.RecordPushoverNotification("error")
-		s.logger.Error("Error sending Pushover notification", "error", err)
-	} else {
-		metrics.RecordPushoverNotification("success")
+		if err := s.notifier.Send("DOCKER SWARM EVENT", body); err != nil {
+			metrics.RecordNotification("error")
+			s.logger.Error("Error sending notification", "error", err)
+		} else {
+			metrics.RecordNotification("success")
+		}
 	}
 
 	s.logger.Debug("Container event", "name", name, "containerID", containerID, "status", status, "exitCode", exitCode, "timestamp", time.Unix(msg.Time, 0).Format(time.RFC3339))

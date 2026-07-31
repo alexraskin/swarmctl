@@ -996,13 +996,13 @@
           "datasource": {
             "type": "prometheus"
           },
-          "expr": "rate(swarmctl_pushover_notifications_total[5m])",
+          "expr": "rate(swarmctl_notifications_total[5m])",
           "interval": "",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
-      "title": "Pushover Notifications Rate",
+      "title": "Notifications Rate",
       "type": "timeseries"
     }
   ],

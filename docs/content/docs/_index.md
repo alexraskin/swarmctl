@@ -30,7 +30,7 @@ configuration.
 
 {{< cards >}}
   {{< card link="how-it-works/" title="How it works" subtitle="Event watchers, the sync path, and removal reconciliation." >}}
-  {{< card link="observability/" title="Observability" subtitle="Prometheus metrics, the Grafana dashboard, Discord logging, Pushover alerts." >}}
+  {{< card link="observability/" title="Observability" subtitle="Prometheus metrics, the Grafana dashboard, JSON logs, shoutrrr alerts." >}}
   {{< card link="troubleshooting/" title="Troubleshooting" subtitle="Startup exits, missing zones, duplicate DNS records, hostnames that never disappear." >}}
   {{< card link="contributing/" title="Contributing" subtitle="Dev loop, package layout, and the invariants to preserve." >}}
 {{< /cards >}}
